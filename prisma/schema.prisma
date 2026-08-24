@@ -1,0 +1,245 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  RECRUITER
+  CANDIDATE
+}
+
+model User {
+  id              String            @id @default(cuid())
+  name            String
+  email           String            @unique
+  passwordHash    String
+  role            Role              @default(CANDIDATE)
+  isActive        Boolean           @default(true)
+  avatar          String?
+  title           String?
+  companyName     String?
+  companyLocation String?
+  phone           String?
+  location        String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  recruiterProfile RecruiterProfile?
+  candidateProfile CandidateProfile?
+  jobs             Job[]            @relation("RecruiterJobs")
+  applications     Application[]    @relation("CandidateApplications")
+  notifications    Notification[]   @relation("UserNotifications")
+  resumes          CandidateResume[] @relation("CandidateResumes")
+  analyses         ResumeAnalysis[]  @relation("CandidateAnalyses")
+
+  @@map("users")
+}
+
+model RecruiterProfile {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyName        String
+  jobTitle           String?
+  companyLocation    String?
+  companyWebsite     String?
+  companyDescription String?  @db.Text
+  companySize        String?
+  companyLogo        String?
+  industry           String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("recruiter_profiles")
+}
+
+model CandidateProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  avatarUrl       String?
+  phone           String?  @default("")
+  location        String?  @default("Remote")
+  skills          Json     @default("[]")
+  bio             String?  @db.Text
+  headline        String   @default("Software Professional | Open to Opportunities")
+  summary         String   @default("Experienced and motivated professional seeking innovative software engineering and AI challenges.") @db.Text
+  portfolioUrl    String?
+  githubUrl       String?
+  linkedinUrl     String?
+  experience      Json     @default("[]")
+  education       Json     @default("[]")
+  resumeText      String   @default("") @db.Text
+  resumeFileName  String?
+  resumeUrl       String?
+  profileStrength Int      @default(85)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("candidate_profiles")
+}
+
+model Job {
+  id              String        @id @default(cuid())
+  recruiterId     String
+  recruiter       User          @relation("RecruiterJobs", fields: [recruiterId], references: [id], onDelete: Cascade)
+  recruiterName   String
+  title           String
+  company         String
+  companyLogo     String?
+  department      String        @default("Engineering")
+  location        String        @default("Remote")
+  type            String        @default("Full-time")
+  experienceLevel String        @default("Mid-Level")
+  salaryMin       Int           @default(120000)
+  salaryMax       Int           @default(160000)
+  salaryCurrency  String        @default("USD")
+  description     String        @db.Text
+  requirements    Json          @default("[]")
+  niceToHave      Json          @default("[]")
+  benefits        Json          @default("[]")
+  skills          Json          @default("[]")
+  status          String        @default("ACTIVE")
+  isActive        Boolean       @default(true)
+  closedAt        DateTime?
+  archivedAt      DateTime?
+  applicantCount  Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  applications    Application[]
+
+  @@map("jobs")
+}
+
+model Application {
+  id                String      @id @default(cuid())
+  jobId             String
+  job               Job         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobTitle          String
+  company           String
+  candidateId       String
+  candidate         User        @relation("CandidateApplications", fields: [candidateId], references: [id], onDelete: Cascade)
+  candidateName     String
+  candidateEmail    String
+  candidateAvatar   String?
+  candidateTitle    String?
+  candidateLocation String?
+  appliedDate       DateTime    @default(now())
+  status            String      @default("APPLIED")
+  resumeText        String      @db.Text
+  coverLetter       String?     @db.Text
+  aiMatch           Json
+  matchScore        Int?
+  aiSummary         String?     @db.Text
+  matchingSkills    Json?       @default("[]")
+  missingSkills     Json?       @default("[]")
+  recommendation    String?
+  recruiterNotes    String?     @db.Text
+  interviewDate     String?
+  interviewType     String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  interviews        Interview[]
+
+  @@unique([jobId, candidateId])
+  @@map("applications")
+}
+
+model Interview {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  candidateName String
+  jobTitle      String
+  date          String
+  time          String
+  interviewer   String
+  type          String      @default("Technical")
+  meetingLink   String      @default("https://meet.google.com/hfw-live-session")
+  status        String      @default("SCHEDULED")
+  notes         String?     @db.Text
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("interviews")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // APPLICATION_STATUS_CHANGED, JOB_CLOSED, JOB_ARCHIVED, INTERVIEW_SCHEDULED, INTERVIEW_UPDATED, OFFER_RECEIVED, NEW_APPLICATION
+  title     String
+  message   String   @db.Text
+  isRead    Boolean  @default(false)
+  metadata  Json?    @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model CandidateResume {
+  id               String   @id @default(cuid())
+  candidateId      String
+  candidate        User     @relation("CandidateResumes", fields: [candidateId], references: [id], onDelete: Cascade)
+  title            String   @default("My Resume")
+  selectedTemplate String   @default("google") // "google" | "latex"
+  personalData     Json     @default("{}")
+  summary          String   @default("") @db.Text
+  education        Json     @default("[]")
+  experience       Json     @default("[]")
+  projects         Json     @default("[]")
+  skills           Json     @default("{}")
+  certifications   Json     @default("[]")
+  achievements     Json     @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([candidateId])
+  @@map("candidate_resumes")
+}
+
+model ResumeAnalysis {
+  id                String   @id @default(cuid())
+  candidateId       String
+  candidate         User     @relation("CandidateAnalyses", fields: [candidateId], references: [id], onDelete: Cascade)
+  resumeId          String?
+  jobId             String?
+  jobTitle          String
+  companyName       String?
+  resumeSource      String   @default("saved") // "saved" | "upload" | "paste"
+  jobSource         String   @default("job")   // "job" | "upload" | "paste"
+  resumeName        String?  @default("My Resume")
+  overallScore      Int      @default(0)
+  categoryScores    Json     @default("{}")
+  matchedSkills     Json     @default("[]")
+  missingSkills     Json     @default("[]")
+  weakSkills        Json?    @default("[]")
+  experienceGaps    Json?    @default("[]")
+  projectRelevance  Json?    @default("[]")
+  formattingChecks  Json?    @default("[]")
+  completenessCheck Json?    @default("{}")
+  bulletReviews     Json?    @default("[]")
+  recommendations   Json     @default("[]")
+  aiSuggestions     Json?    @default("[]")
+  aiSummary         String?  @db.Text
+  parsedResumeData  Json?    @default("{}")
+  rawResumeText     String?  @db.Text
+  rawJobDescription String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([candidateId])
+  @@map("resume_analyses")
+}
+

@@ -1,0 +1,6 @@
+{
+  "name": "HireFlow AI",
+  "description": "AI-powered recruitment platform with intelligent requisition copilot, ATS pipeline, candidate screening, resume matching, and live A4 resume builder.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
