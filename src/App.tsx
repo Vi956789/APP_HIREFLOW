@@ -23,13 +23,43 @@ import { api } from './services/api';
 import { User, UserRole, Job, Application, CandidateProfile as CandidateProfileType, ApplicationStatus } from './types';
 import { Sparkles } from 'lucide-react';
 
+const getInitialTheme = (): boolean => {
+  try {
+    const saved = localStorage.getItem('hireflow_theme');
+    if (saved === 'dark') return true;
+    if (saved === 'light') return false;
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return true;
+    }
+  } catch (e) {
+    console.warn('Could not read theme from localStorage', e);
+  }
+  return false;
+};
+
 export function App() {
   // Authentication & Session State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const [userRole, setUserRole] = useState<UserRole>('CANDIDATE');
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
-  const [darkMode, setDarkMode] = useState<boolean>(false);
+  const [darkMode, setDarkMode] = useState<boolean>(getInitialTheme);
+
+  // Sync darkMode state with document.documentElement class and persist in localStorage
+  useEffect(() => {
+    const root = document.documentElement;
+    if (darkMode) {
+      root.classList.add('dark');
+      try {
+        localStorage.setItem('hireflow_theme', 'dark');
+      } catch {}
+    } else {
+      root.classList.remove('dark');
+      try {
+        localStorage.setItem('hireflow_theme', 'light');
+      } catch {}
+    }
+  }, [darkMode]);
 
   // Data State
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -436,6 +466,8 @@ export function App() {
                 setIsRegisterOpen(true);
                 setIsLoginOpen(false);
               }}
+              darkMode={darkMode}
+              onToggleDarkMode={() => setDarkMode((prev) => !prev)}
             />
 
             {/* Login Modal */}
@@ -474,7 +506,7 @@ export function App() {
                 navigateTab(userRole === 'RECRUITER' ? 'company' : 'profile');
               }}
               darkMode={darkMode}
-              onToggleDarkMode={() => setDarkMode(!darkMode)}
+              onToggleDarkMode={() => setDarkMode((prev) => !prev)}
               currentTab={currentTab}
               onSelectTab={navigateTab}
             />

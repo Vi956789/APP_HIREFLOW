@@ -1,16 +1,20 @@
 import React from 'react';
-import { Sparkles, Briefcase, Users, ArrowRight, ShieldCheck, Zap, CheckCircle2, UserCheck, Bot } from 'lucide-react';
+import { Sparkles, Briefcase, Users, ArrowRight, ShieldCheck, Zap, CheckCircle2, UserCheck, Bot, Moon, Sun } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserRole } from '../../types';
 
 interface RoleSelectorProps {
   onOpenLogin: (role?: UserRole) => void;
   onOpenRegister: (role?: UserRole) => void;
+  darkMode?: boolean;
+  onToggleDarkMode?: () => void;
 }
 
 export const RoleSelector: React.FC<RoleSelectorProps> = ({
   onOpenLogin,
   onOpenRegister,
+  darkMode = false,
+  onToggleDarkMode,
 }) => {
   return (
     <div id="role-selector-landing" className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col justify-between py-8 px-4 sm:px-6 lg:px-8">
@@ -31,6 +35,17 @@ export const RoleSelector: React.FC<RoleSelectorProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5">
+          {onToggleDarkMode && (
+            <button
+              id="landing-theme-toggle-btn"
+              onClick={onToggleDarkMode}
+              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xs transition-colors cursor-pointer"
+              title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600 dark:text-slate-300" />}
+            </button>
+          )}
           <button
             id="header-sign-in-btn"
             onClick={() => onOpenLogin('CANDIDATE')}
