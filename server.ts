@@ -54,8 +54,8 @@ async function callGeminiSafe<T>(
     return fallbackGenerator();
   }
 
-  // Prioritize fast, high-availability flash lite and flash latest models
-  const modelsToTry = ["gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.7-flash"];
+  // Prioritize fast, high-availability flash models
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash"];
   for (const model of modelsToTry) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -786,10 +786,11 @@ Evaluate the match. Return a valid JSON object with EXACTLY this structure:
         companyLogo: logoVal,
       });
 
+      const updatedUser = await db.getUserById(user.id);
       res.json({
         success: true,
-        user: sanitizeUser(result.user),
-        profile: result.profile,
+        user: updatedUser ? sanitizeUser(updatedUser) : sanitizeUser(user),
+        profile: result,
       });
     } catch (err: any) {
       console.error("Update recruiter profile error:", err);

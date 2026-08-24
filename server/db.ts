@@ -1,4 +1,5 @@
-import { prisma } from './prisma';
+import { prisma, hasDatabaseUrl } from './prisma';
+import { inMemoryStore, DBUser } from './inMemoryStore';
 import {
   User,
   Job,
@@ -10,11 +11,10 @@ import {
   UserRole,
   CandidateResumeData,
   ATSAnalysisResult,
+  ApplicationStatus,
 } from '../src/types';
 
-export interface DBUser extends User {
-  passwordHash: string;
-}
+export type { DBUser };
 
 function formatTimeAgo(date: Date | string): string {
   const d = new Date(date);
@@ -93,7 +93,7 @@ function mapPrismaApplicationToApplication(app: any): Application {
     candidateTitle: app.candidateTitle || undefined,
     candidateLocation: app.candidateLocation || undefined,
     appliedDate: app.appliedDate instanceof Date ? app.appliedDate.toISOString() : String(app.appliedDate),
-    status: app.status,
+    status: (app.status === 'SHORTLISTED' ? 'SCREENING' : app.status === 'INTERVIEW' ? 'INTERVIEWING' : app.status) as ApplicationStatus,
     resumeText: app.resumeText,
     coverLetter: app.coverLetter || undefined,
     aiMatch: typeof app.aiMatch === 'string' ? JSON.parse(app.aiMatch) : app.aiMatch,
@@ -110,77 +110,62 @@ function mapPrismaApplicationToApplication(app: any): Application {
   };
 }
 
-function mapPrismaCandidateProfileToProfile(prof: any): CandidateProfile {
+function mapPrismaCandidateProfileToCandidateProfile(p: any, user?: any): CandidateProfile {
   return {
-    id: prof.id,
-    userId: prof.userId,
-    headline: prof.headline,
-    summary: prof.summary,
-    location: prof.location,
-    phone: prof.phone,
-    portfolioUrl: prof.portfolioUrl || undefined,
-    githubUrl: prof.githubUrl || undefined,
-    linkedinUrl: prof.linkedinUrl || undefined,
-    skills: Array.isArray(prof.skills) ? prof.skills : [],
-    experience: Array.isArray(prof.experience) ? prof.experience : [],
-    education: Array.isArray(prof.education) ? prof.education : [],
-    resumeText: prof.resumeText || '',
-    resumeFileName: prof.resumeFileName || undefined,
-    avatarUrl: prof.avatarUrl || undefined,
-    profileStrength: prof.profileStrength || 85,
+    id: p.id,
+    userId: p.userId,
+    name: user?.name,
+    email: user?.email,
+    title: user?.title,
+    avatar: p.avatarUrl || user?.avatar,
+    avatarUrl: p.avatarUrl || user?.avatar,
+    phone: p.phone || '',
+    location: p.location || 'Remote',
+    skills: Array.isArray(p.skills) ? p.skills : [],
+    headline: p.headline || 'Software Professional',
+    summary: p.summary || '',
+    portfolioUrl: p.portfolioUrl || undefined,
+    githubUrl: p.githubUrl || undefined,
+    linkedinUrl: p.linkedinUrl || undefined,
+    experience: Array.isArray(p.experience) ? p.experience : [],
+    education: Array.isArray(p.education) ? p.education : [],
+    resumeText: p.resumeText || '',
+    resumeFileName: p.resumeFileName || undefined,
+    profileStrength: p.profileStrength || 80,
   };
 }
 
-function mapPrismaRecruiterProfileToProfile(prof: any): RecruiterProfile {
+function mapPrismaRecruiterProfileToRecruiterProfile(p: any, user?: any): RecruiterProfile {
   return {
-    id: prof.id,
-    userId: prof.userId,
-    companyName: prof.companyName || '',
-    jobTitle: prof.jobTitle || undefined,
-    companyLocation: prof.companyLocation || undefined,
-    companyWebsite: prof.companyWebsite || undefined,
-    companyDescription: prof.companyDescription || undefined,
-    companySize: prof.companySize || undefined,
-    industry: prof.industry || undefined,
-    companyLogo: prof.companyLogo || undefined,
-    companyLogoUrl: prof.companyLogo || undefined,
-    createdAt: prof.createdAt instanceof Date ? prof.createdAt.toISOString() : String(prof.createdAt),
-    updatedAt: prof.updatedAt instanceof Date ? prof.updatedAt.toISOString() : String(prof.updatedAt),
+    id: p.id,
+    userId: p.userId,
+    companyName: p.companyName || user?.companyName || 'My Company',
+    jobTitle: p.jobTitle || user?.title,
+    companyLocation: p.companyLocation || user?.companyLocation,
+    companyWebsite: p.companyWebsite || undefined,
+    companyDescription: p.companyDescription || undefined,
+    companySize: p.companySize || undefined,
+    companyLogo: p.companyLogo || user?.avatar,
+    companyLogoUrl: p.companyLogo || user?.avatar,
+    industry: p.industry || undefined,
+    createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : String(p.createdAt),
+    updatedAt: p.updatedAt instanceof Date ? p.updatedAt.toISOString() : String(p.updatedAt),
   };
 }
 
-function mapPrismaInterviewToInterview(item: any): InterviewSchedule {
+function mapPrismaInterviewToInterview(i: any): InterviewSchedule {
   return {
-    id: item.id,
-    applicationId: item.applicationId,
-    candidateName: item.candidateName,
-    jobTitle: item.jobTitle,
-    date: item.date,
-    time: item.time,
-    interviewer: item.interviewer,
-    type: item.type,
-    meetingLink: item.meetingLink,
-    status: item.status,
-    notes: item.notes || undefined,
-  };
-}
-
-function mapPrismaResumeToCandidateResume(r: any): CandidateResumeData {
-  return {
-    id: r.id,
-    candidateId: r.candidateId,
-    title: r.title || 'My Resume',
-    selectedTemplate: (r.selectedTemplate as 'google' | 'latex') || 'google',
-    personalData: typeof r.personalData === 'string' ? JSON.parse(r.personalData) : (r.personalData || {}),
-    summary: r.summary || '',
-    education: typeof r.education === 'string' ? JSON.parse(r.education) : (r.education || []),
-    experience: typeof r.experience === 'string' ? JSON.parse(r.experience) : (r.experience || []),
-    projects: typeof r.projects === 'string' ? JSON.parse(r.projects) : (r.projects || []),
-    skills: typeof r.skills === 'string' ? JSON.parse(r.skills) : (r.skills || { languages: [], frameworks: [], databases: [], tools: [], aiMl: [], other: [] }),
-    certifications: typeof r.certifications === 'string' ? JSON.parse(r.certifications) : (r.certifications || []),
-    achievements: typeof r.achievements === 'string' ? JSON.parse(r.achievements) : (r.achievements || []),
-    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
-    updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
+    id: i.id,
+    applicationId: i.applicationId,
+    candidateName: i.candidateName,
+    jobTitle: i.jobTitle,
+    date: i.date,
+    time: i.time,
+    interviewer: i.interviewer,
+    type: i.type,
+    meetingLink: i.meetingLink,
+    status: i.status,
+    notes: i.notes || undefined,
   };
 }
 
@@ -195,33 +180,52 @@ function mapPrismaNotificationToNotification(n: any): NotificationItem {
     isRead: n.isRead,
     read: n.isRead,
     time: formatTimeAgo(n.createdAt),
-    metadata: typeof n.metadata === 'string' ? JSON.parse(n.metadata) : (n.metadata || {}),
     createdAt: n.createdAt instanceof Date ? n.createdAt.toISOString() : String(n.createdAt),
+    metadata: typeof n.metadata === 'string' ? JSON.parse(n.metadata) : n.metadata || {},
   };
 }
 
-function mapPrismaAnalysisToATSResult(item: any): ATSAnalysisResult {
-  const overall = item.overallScore || 0;
-  let verdict: any = 'MODERATE_FIT';
-  if (overall >= 90) verdict = 'EXCELLENT_MATCH';
-  else if (overall >= 78) verdict = 'STRONG_FIT';
-  else if (overall >= 65) verdict = 'COMPETITIVE_FIT';
-  else if (overall >= 50) verdict = 'MODERATE_FIT';
-  else verdict = 'NEEDS_OPTIMIZATION';
-
+function mapPrismaResumeToCandidateResume(r: any): CandidateResumeData {
   return {
-    id: item.id,
-    candidateId: item.candidateId,
-    resumeId: item.resumeId || undefined,
-    jobId: item.jobId || undefined,
-    jobTitle: item.jobTitle,
-    companyName: item.companyName || undefined,
-    resumeSource: item.resumeSource as any,
-    jobSource: item.jobSource as any,
-    resumeName: item.resumeName || undefined,
-    overallScore: item.overallScore,
-    verdict,
-    categoryScores: (item.categoryScores || {
+    id: r.id,
+    candidateId: r.candidateId,
+    title: r.title,
+    selectedTemplate: r.selectedTemplate || 'google',
+    personalData: typeof r.personalData === 'string' ? JSON.parse(r.personalData) : r.personalData || {
+      fullName: '',
+      professionalTitle: '',
+      email: '',
+      phone: '',
+      location: '',
+      linkedin: '',
+      github: '',
+      portfolio: '',
+    },
+    summary: r.summary || '',
+    education: Array.isArray(r.education) ? r.education : (typeof r.education === 'string' ? JSON.parse(r.education) : []),
+    experience: Array.isArray(r.experience) ? r.experience : (typeof r.experience === 'string' ? JSON.parse(r.experience) : []),
+    projects: Array.isArray(r.projects) ? r.projects : (typeof r.projects === 'string' ? JSON.parse(r.projects) : []),
+    skills: typeof r.skills === 'string' ? JSON.parse(r.skills) : r.skills || { languages: [], frameworks: [], databases: [], tools: [], aiMl: [], other: [] },
+    certifications: Array.isArray(r.certifications) ? r.certifications : (typeof r.certifications === 'string' ? JSON.parse(r.certifications) : []),
+    achievements: Array.isArray(r.achievements) ? r.achievements : (typeof r.achievements === 'string' ? JSON.parse(r.achievements) : []),
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+    updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
+  };
+}
+
+function mapPrismaAnalysisToATSResult(a: any): ATSAnalysisResult {
+  return {
+    id: a.id,
+    resumeId: a.resumeId || undefined,
+    jobId: a.jobId || undefined,
+    jobTitle: a.jobTitle,
+    companyName: a.companyName || undefined,
+    resumeSource: a.resumeSource || 'saved',
+    jobSource: a.jobSource || 'job',
+    resumeName: a.resumeName || 'Resume Analysis',
+    overallScore: a.overallScore,
+    verdict: a.overallScore >= 85 ? 'EXCELLENT_MATCH' : a.overallScore >= 70 ? 'STRONG_FIT' : a.overallScore >= 55 ? 'COMPETITIVE_FIT' : 'NEEDS_OPTIMIZATION',
+    categoryScores: typeof a.categoryScores === 'string' ? JSON.parse(a.categoryScores) : a.categoryScores || {
       skills: 0,
       experience: 0,
       keywords: 0,
@@ -229,32 +233,31 @@ function mapPrismaAnalysisToATSResult(item: any): ATSAnalysisResult {
       formatting: 0,
       projects: 0,
       education: 0,
-    }) as any,
-    matchedSkills: Array.isArray(item.matchedSkills) ? item.matchedSkills : [],
-    missingSkills: Array.isArray(item.missingSkills) ? item.missingSkills : [],
-    weakSkills: Array.isArray(item.weakSkills) ? item.weakSkills : [],
-    experienceGaps: Array.isArray(item.experienceGaps) ? item.experienceGaps : [],
-    projectRelevance: Array.isArray(item.projectRelevance) ? item.projectRelevance : [],
-    formattingChecks: Array.isArray(item.formattingChecks) ? item.formattingChecks : [],
-    completenessCheck: (item.completenessCheck || {
+    },
+    matchedSkills: Array.isArray(a.matchedSkills) ? a.matchedSkills : (typeof a.matchedSkills === 'string' ? JSON.parse(a.matchedSkills) : []),
+    missingSkills: Array.isArray(a.missingSkills) ? a.missingSkills : (typeof a.missingSkills === 'string' ? JSON.parse(a.missingSkills) : []),
+    weakSkills: Array.isArray(a.weakSkills) ? a.weakSkills : (typeof a.weakSkills === 'string' ? JSON.parse(a.weakSkills) : []),
+    experienceGaps: Array.isArray(a.experienceGaps) ? a.experienceGaps : (typeof a.experienceGaps === 'string' ? JSON.parse(a.experienceGaps) : []),
+    projectRelevance: Array.isArray(a.projectRelevance) ? a.projectRelevance : (typeof a.projectRelevance === 'string' ? JSON.parse(a.projectRelevance) : []),
+    formattingChecks: Array.isArray(a.formattingChecks) ? a.formattingChecks : (typeof a.formattingChecks === 'string' ? JSON.parse(a.formattingChecks) : []),
+    completenessCheck: typeof a.completenessCheck === 'string' ? JSON.parse(a.completenessCheck) : a.completenessCheck || {
       contactInfo: true,
       summary: true,
       experience: true,
       education: true,
       skills: true,
       projects: true,
-      wordCount: 500,
+      wordCount: 450,
       estimatedPages: 1,
       readingTimeMinutes: 2,
-    }) as any,
-    bulletReviews: Array.isArray(item.bulletReviews) ? item.bulletReviews : [],
-    recommendations: Array.isArray(item.recommendations) ? item.recommendations : [],
-    aiSummary: item.aiSummary || '',
-    parsedResumeData: item.parsedResumeData || undefined,
-    rawResumeText: item.rawResumeText || undefined,
-    rawJobDescription: item.rawJobDescription || undefined,
-    createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : String(item.createdAt),
-    updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : String(item.updatedAt),
+    },
+    bulletReviews: Array.isArray(a.bulletReviews) ? a.bulletReviews : (typeof a.bulletReviews === 'string' ? JSON.parse(a.bulletReviews) : []),
+    recommendations: Array.isArray(a.recommendations) ? a.recommendations : (typeof a.recommendations === 'string' ? JSON.parse(a.recommendations) : []),
+    aiSummary: a.aiSummary || '',
+    parsedResumeData: typeof a.parsedResumeData === 'string' ? JSON.parse(a.parsedResumeData) : a.parsedResumeData || {},
+    rawResumeText: a.rawResumeText || undefined,
+    rawJobDescription: a.rawJobDescription || undefined,
+    createdAt: a.createdAt instanceof Date ? a.createdAt.toISOString() : String(a.createdAt),
   };
 }
 
@@ -263,345 +266,437 @@ export class Database {
   // USER METHODS
   // =========================================================================
   async getUserByEmail(email: string): Promise<DBUser | null> {
-    const clean = (email || '').toLowerCase().trim();
-    const user = await prisma.user.findFirst({
-      where: {
-        email: {
-          equals: clean,
-          mode: 'insensitive',
-        },
-      },
-    });
-    return user ? mapPrismaUserToDBUser(user) : null;
+    const cleanEmail = email.trim().toLowerCase();
+    if (hasDatabaseUrl()) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { email: cleanEmail },
+        });
+        if (user) return mapPrismaUserToDBUser(user);
+      } catch (e) {
+        console.warn('[DB] Prisma getUserByEmail failed, falling back to memory store:', e);
+      }
+    }
+
+    for (const u of inMemoryStore.users.values()) {
+      if (u.email.toLowerCase() === cleanEmail) {
+        return { ...u };
+      }
+    }
+    return null;
   }
 
   async getUserById(id: string): Promise<DBUser | null> {
-    const user = await prisma.user.findUnique({
-      where: { id },
-    });
-    return user ? mapPrismaUserToDBUser(user) : null;
-  }
-
-  async createUser(userData: Omit<DBUser, 'id' | 'createdAt'>): Promise<DBUser> {
-    const cleanEmail = userData.email.toLowerCase().trim();
-    const user = await prisma.user.create({
-      data: {
-        name: userData.name,
-        email: cleanEmail,
-        passwordHash: userData.passwordHash,
-        role: userData.role as 'RECRUITER' | 'CANDIDATE',
-        avatar: userData.avatar,
-        title: userData.title,
-        companyName: userData.companyName,
-        companyLocation: userData.companyLocation,
-        phone: userData.phone,
-        location: userData.location,
-      },
-    });
-
-    if (userData.role === 'RECRUITER') {
-      await prisma.recruiterProfile.create({
-        data: {
-          userId: user.id,
-          companyName: userData.companyName || 'My Company',
-          jobTitle: userData.title || 'Talent Acquisition',
-          companyLocation: userData.companyLocation || 'Remote',
-        },
-      }).catch((err) => {
-        console.error('[DB] Failed to create recruiter profile:', err);
-      });
-    } else {
-      await prisma.candidateProfile.create({
-        data: {
-          userId: user.id,
-          phone: userData.phone || '',
-          location: userData.location || 'Remote',
-          headline: userData.title ? `${userData.title} | Open to Opportunities` : 'Software Professional | Open to Opportunities',
-          summary: 'Experienced professional seeking innovative challenges.',
-          skills: [],
-          experience: [],
-          education: [],
-          resumeText: `${userData.name} - ${userData.title || 'Software Professional'}`,
-        },
-      }).catch((err) => {
-        console.error('[DB] Failed to create candidate profile:', err);
-      });
-    }
-
-    return mapPrismaUserToDBUser(user);
-  }
-
-  async updateUser(id: string, updates: Partial<DBUser>): Promise<DBUser | null> {
-    const data: any = {};
-    if (updates.name !== undefined) data.name = updates.name;
-    if (updates.email !== undefined) data.email = updates.email.toLowerCase().trim();
-    if (updates.passwordHash !== undefined) data.passwordHash = updates.passwordHash;
-    if (updates.avatar !== undefined) data.avatar = updates.avatar;
-    if (updates.title !== undefined) data.title = updates.title;
-    if (updates.companyName !== undefined) data.companyName = updates.companyName;
-    if (updates.companyLocation !== undefined) data.companyLocation = updates.companyLocation;
-    if (updates.phone !== undefined) data.phone = updates.phone;
-    if (updates.location !== undefined) data.location = updates.location;
-
-    const user = await prisma.user.update({
-      where: { id },
-      data,
-    });
-    return user ? mapPrismaUserToDBUser(user) : null;
-  }
-
-  // =========================================================================
-  // JOB METHODS
-  // =========================================================================
-  async getJobs(filters?: {
-    recruiterId?: string;
-    status?: string;
-    department?: string;
-    type?: string;
-    search?: string;
-    includeArchived?: boolean;
-    activeOnly?: boolean;
-  }): Promise<Job[]> {
-    const where: any = {};
-    if (filters?.recruiterId) {
-      where.recruiterId = filters.recruiterId;
-      if (!filters.includeArchived && filters.status !== 'ARCHIVED' && filters.status !== 'ALL') {
-        if (!filters.status) {
-          where.status = { not: 'ARCHIVED' };
-        }
+    if (hasDatabaseUrl()) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id },
+        });
+        if (user) return mapPrismaUserToDBUser(user);
+      } catch (e) {
+        console.warn('[DB] Prisma getUserById failed, falling back to memory store:', e);
       }
     }
-    if (filters?.activeOnly) {
-      where.status = 'ACTIVE';
-      where.isActive = true;
-    } else if (filters?.status && filters.status !== 'ALL') {
-      where.status = filters.status;
-    }
-    if (filters?.department && filters.department !== 'All') {
-      where.department = {
-        equals: filters.department,
-        mode: 'insensitive',
-      };
-    }
-    if (filters?.type && filters.type !== 'All') {
-      where.type = {
-        equals: filters.type,
-        mode: 'insensitive',
-      };
-    }
-    if (filters?.search) {
-      const q = filters.search.trim();
-      where.OR = [
-        { title: { contains: q, mode: 'insensitive' } },
-        { company: { contains: q, mode: 'insensitive' } },
-        { description: { contains: q, mode: 'insensitive' } },
-      ];
+    const memUser = inMemoryStore.users.get(id);
+    return memUser ? { ...memUser } : null;
+  }
+
+  async createUser(userData: {
+    name: string;
+    email: string;
+    passwordHash: string;
+    role: UserRole;
+    avatar?: string;
+    title?: string;
+    companyName?: string;
+    companyLocation?: string;
+    phone?: string;
+    location?: string;
+  }): Promise<DBUser> {
+    const cleanEmail = userData.email.trim().toLowerCase();
+
+    if (hasDatabaseUrl()) {
+      try {
+        const created = await prisma.user.create({
+          data: {
+            name: userData.name,
+            email: cleanEmail,
+            passwordHash: userData.passwordHash,
+            role: userData.role,
+            avatar: userData.avatar,
+            title: userData.title,
+            companyName: userData.companyName,
+            companyLocation: userData.companyLocation,
+            phone: userData.phone,
+            location: userData.location,
+            candidateProfile:
+              userData.role === 'CANDIDATE'
+                ? {
+                    create: {
+                      headline: `${userData.title || 'Professional'} | Open to Opportunities`,
+                      summary: 'Motivated software professional seeking challenging career opportunities.',
+                      skills: [],
+                      experience: [],
+                      education: [],
+                      location: userData.location || 'Remote',
+                      phone: userData.phone || '',
+                    },
+                  }
+                : undefined,
+            recruiterProfile:
+              userData.role === 'RECRUITER'
+                ? {
+                    create: {
+                      companyName: userData.companyName || 'My Company',
+                      jobTitle: userData.title || 'Recruiter',
+                      companyLocation: userData.companyLocation || 'Remote',
+                    },
+                  }
+                : undefined,
+          },
+        });
+        return mapPrismaUserToDBUser(created);
+      } catch (e) {
+        console.warn('[DB] Prisma createUser failed, falling back to memory store:', e);
+      }
     }
 
-    const jobs = await prisma.job.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-    return jobs.map(mapPrismaJobToJob);
+    const id = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newUser: DBUser = {
+      id,
+      name: userData.name,
+      email: cleanEmail,
+      passwordHash: userData.passwordHash,
+      role: userData.role,
+      avatar: userData.avatar,
+      title: userData.title,
+      companyName: userData.companyName,
+      companyLocation: userData.companyLocation,
+      phone: userData.phone,
+      location: userData.location,
+      createdAt: new Date().toISOString(),
+    };
+
+    inMemoryStore.users.set(id, newUser);
+
+    if (userData.role === 'CANDIDATE') {
+      inMemoryStore.candidateProfiles.set(id, {
+        id: `cprof_${id}`,
+        userId: id,
+        name: newUser.name,
+        email: newUser.email,
+        title: newUser.title,
+        avatar: newUser.avatar,
+        phone: newUser.phone || '',
+        location: newUser.location || 'Remote',
+        headline: `${newUser.title || 'Professional'} | Open to Opportunities`,
+        summary: 'Motivated software professional seeking challenging career opportunities.',
+        skills: [],
+        experience: [],
+        education: [],
+        resumeText: '',
+        profileStrength: 50,
+      });
+    } else if (userData.role === 'RECRUITER') {
+      inMemoryStore.recruiterProfiles.set(id, {
+        id: `rprof_${id}`,
+        userId: id,
+        companyName: newUser.companyName || 'My Company',
+        jobTitle: newUser.title || 'Recruiter',
+        companyLocation: newUser.companyLocation || 'Remote',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    return { ...newUser };
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<DBUser | null> {
+    if (hasDatabaseUrl()) {
+      try {
+        const updated = await prisma.user.update({
+          where: { id },
+          data: {
+            name: updates.name,
+            avatar: updates.avatar,
+            title: updates.title,
+            companyName: updates.companyName,
+            companyLocation: updates.companyLocation,
+            phone: updates.phone,
+            location: updates.location,
+          },
+        });
+        return mapPrismaUserToDBUser(updated);
+      } catch (e) {
+        console.warn('[DB] Prisma updateUser failed, falling back to memory store:', e);
+      }
+    }
+
+    const existing = inMemoryStore.users.get(id);
+    if (!existing) return null;
+    const merged: DBUser = {
+      ...existing,
+      ...updates,
+    };
+    inMemoryStore.users.set(id, merged);
+    return { ...merged };
+  }
+
+  // =========================================================================
+  // JOB REQUISITION METHODS
+  // =========================================================================
+  async getJobs(filters?: {
+    search?: string;
+    department?: string;
+    location?: string;
+    type?: string;
+    experienceLevel?: string;
+    skills?: string[];
+    status?: string;
+    recruiterId?: string;
+    activeOnly?: boolean;
+    includeArchived?: boolean;
+  }): Promise<Job[]> {
+    if (hasDatabaseUrl()) {
+      try {
+        const where: any = {};
+        if (filters?.recruiterId) where.recruiterId = filters.recruiterId;
+        if (filters?.status) where.status = filters.status;
+        if (filters?.activeOnly) where.status = 'ACTIVE';
+        if (filters?.department) where.department = { contains: filters.department, mode: 'insensitive' };
+        if (filters?.type) where.type = filters.type;
+        if (filters?.experienceLevel) where.experienceLevel = filters.experienceLevel;
+
+        const jobs = await prisma.job.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+        });
+
+        let mapped = jobs.map(mapPrismaJobToJob);
+        if (filters?.search) {
+          const s = filters.search.toLowerCase();
+          mapped = mapped.filter(
+            (j) =>
+              j.title.toLowerCase().includes(s) ||
+              j.company.toLowerCase().includes(s) ||
+              j.description.toLowerCase().includes(s) ||
+              j.skills.some((sk) => sk.toLowerCase().includes(s))
+          );
+        }
+        return mapped;
+      } catch (e) {
+        console.warn('[DB] Prisma getJobs failed, falling back to memory store:', e);
+      }
+    }
+
+    let list = Array.from(inMemoryStore.jobs.values());
+    if (filters?.recruiterId) {
+      list = list.filter((j) => j.recruiterId === filters.recruiterId);
+    }
+    if (filters?.status) {
+      list = list.filter((j) => j.status === filters.status);
+    }
+    if (filters?.activeOnly) {
+      list = list.filter((j) => j.status === 'ACTIVE' && j.isActive !== false);
+    }
+    if (!filters?.includeArchived && !filters?.status) {
+      list = list.filter((j) => j.status !== 'ARCHIVED');
+    }
+    if (filters?.department) {
+      const dep = filters.department.toLowerCase();
+      list = list.filter((j) => j.department.toLowerCase().includes(dep));
+    }
+    if (filters?.type) {
+      list = list.filter((j) => j.type.toLowerCase() === filters.type!.toLowerCase());
+    }
+    if (filters?.experienceLevel) {
+      list = list.filter((j) => j.experienceLevel.toLowerCase() === filters.experienceLevel!.toLowerCase());
+    }
+    if (filters?.search) {
+      const s = filters.search.toLowerCase();
+      list = list.filter(
+        (j) =>
+          j.title.toLowerCase().includes(s) ||
+          j.company.toLowerCase().includes(s) ||
+          j.description.toLowerCase().includes(s) ||
+          j.skills.some((sk) => sk.toLowerCase().includes(s))
+      );
+    }
+
+    return list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   async getJobById(id: string): Promise<Job | null> {
-    const job = await prisma.job.findUnique({
-      where: { id },
-    });
-    return job ? mapPrismaJobToJob(job) : null;
+    if (hasDatabaseUrl()) {
+      try {
+        const job = await prisma.job.findUnique({
+          where: { id },
+        });
+        if (job) return mapPrismaJobToJob(job);
+      } catch (e) {
+        console.warn('[DB] Prisma getJobById failed, falling back to memory store:', e);
+      }
+    }
+    const memJob = inMemoryStore.jobs.get(id);
+    return memJob ? { ...memJob } : null;
   }
 
   async createJob(jobData: Omit<Job, 'id' | 'createdAt' | 'applicantCount'>): Promise<Job> {
-    const job = await prisma.job.create({
-      data: {
-        title: jobData.title,
-        company: jobData.company,
-        companyLogo: jobData.companyLogo,
-        department: jobData.department,
-        location: jobData.location,
-        type: jobData.type,
-        experienceLevel: jobData.experienceLevel,
-        salaryMin: jobData.salaryMin,
-        salaryMax: jobData.salaryMax,
-        salaryCurrency: jobData.salaryCurrency,
-        description: jobData.description,
-        requirements: jobData.requirements as any,
-        niceToHave: (jobData.niceToHave || []) as any,
-        benefits: (jobData.benefits || []) as any,
-        skills: (jobData.skills || []) as any,
-        status: jobData.status || 'ACTIVE',
-        isActive: jobData.status !== 'CLOSED' && jobData.status !== 'ARCHIVED',
-        recruiterId: jobData.recruiterId,
-        recruiterName: jobData.recruiterName,
-        applicantCount: 0,
-      },
-    });
-    return mapPrismaJobToJob(job);
-  }
-
-  async updateJob(id: string, updates: Partial<Job>): Promise<Job | null> {
-    const data: any = {};
-    if (updates.title !== undefined) data.title = updates.title;
-    if (updates.company !== undefined) data.company = updates.company;
-    if (updates.companyLogo !== undefined) data.companyLogo = updates.companyLogo;
-    if (updates.department !== undefined) data.department = updates.department;
-    if (updates.location !== undefined) data.location = updates.location;
-    if (updates.type !== undefined) data.type = updates.type;
-    if (updates.experienceLevel !== undefined) data.experienceLevel = updates.experienceLevel;
-    if (updates.salaryMin !== undefined) data.salaryMin = updates.salaryMin;
-    if (updates.salaryMax !== undefined) data.salaryMax = updates.salaryMax;
-    if (updates.salaryCurrency !== undefined) data.salaryCurrency = updates.salaryCurrency;
-    if (updates.description !== undefined) data.description = updates.description;
-    if (updates.requirements !== undefined) data.requirements = updates.requirements as any;
-    if (updates.niceToHave !== undefined) data.niceToHave = updates.niceToHave as any;
-    if (updates.benefits !== undefined) data.benefits = updates.benefits as any;
-    if (updates.skills !== undefined) data.skills = updates.skills as any;
-    if (updates.status !== undefined) {
-      data.status = updates.status;
-      data.isActive = updates.status === 'ACTIVE';
-      if (updates.status === 'CLOSED') {
-        data.closedAt = new Date();
-      } else if (updates.status === 'ARCHIVED') {
-        data.archivedAt = new Date();
+    if (hasDatabaseUrl()) {
+      try {
+        const created = await prisma.job.create({
+          data: {
+            recruiterId: jobData.recruiterId,
+            recruiterName: jobData.recruiterName,
+            title: jobData.title,
+            company: jobData.company,
+            companyLogo: jobData.companyLogo,
+            department: jobData.department || 'Engineering',
+            location: jobData.location || 'Remote',
+            type: jobData.type || 'Full-time',
+            experienceLevel: jobData.experienceLevel || 'Mid-Level',
+            salaryMin: jobData.salaryMin || 100000,
+            salaryMax: jobData.salaryMax || 150000,
+            salaryCurrency: jobData.salaryCurrency || 'USD',
+            description: jobData.description,
+            requirements: jobData.requirements || [],
+            niceToHave: jobData.niceToHave || [],
+            benefits: jobData.benefits || [],
+            skills: jobData.skills || [],
+            status: jobData.status || 'ACTIVE',
+            isActive: jobData.isActive ?? true,
+          },
+        });
+        return mapPrismaJobToJob(created);
+      } catch (e) {
+        console.warn('[DB] Prisma createJob failed, falling back to memory store:', e);
       }
     }
-    if (updates.isActive !== undefined) data.isActive = updates.isActive;
-    if (updates.applicantCount !== undefined) data.applicantCount = updates.applicantCount;
 
-    const job = await prisma.job.update({
-      where: { id },
-      data,
-    });
-    return job ? mapPrismaJobToJob(job) : null;
+    const id = `job_${Date.now()}`;
+    const newJob: Job = {
+      id,
+      recruiterId: jobData.recruiterId,
+      recruiterName: jobData.recruiterName,
+      title: jobData.title,
+      company: jobData.company,
+      companyLogo: jobData.companyLogo,
+      department: jobData.department || 'Engineering',
+      location: jobData.location || 'Remote',
+      type: jobData.type || 'Full-time',
+      experienceLevel: jobData.experienceLevel || 'Mid-Level',
+      salaryMin: jobData.salaryMin || 100000,
+      salaryMax: jobData.salaryMax || 150000,
+      salaryCurrency: jobData.salaryCurrency || 'USD',
+      description: jobData.description,
+      requirements: jobData.requirements || [],
+      niceToHave: jobData.niceToHave || [],
+      benefits: jobData.benefits || [],
+      skills: jobData.skills || [],
+      status: jobData.status || 'ACTIVE',
+      isActive: jobData.isActive ?? true,
+      applicantCount: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    inMemoryStore.jobs.set(id, newJob);
+    return { ...newJob };
   }
 
-  async closeJob(jobId: string, recruiterId: string): Promise<Job> {
-    const existing = await this.getJobById(jobId);
-    if (!existing) throw new Error('Job requisition not found.');
-    if (existing.recruiterId !== recruiterId) throw new Error('Forbidden. You can only close your own job postings.');
-
-    const [updatedJob] = await prisma.$transaction(async (tx) => {
-      const job = await tx.job.update({
-        where: { id: jobId },
-        data: {
-          status: 'CLOSED',
-          isActive: false,
-          closedAt: new Date(),
-        },
-      });
-
-      // Find all active/in-progress applications for this job that aren't already HIRED, REJECTED, or JOB_CLOSED
-      const activeApps = await tx.application.findMany({
-        where: {
-          jobId,
-          status: { notIn: ['HIRED', 'REJECTED', 'JOB_CLOSED'] },
-        },
-      });
-
-      if (activeApps.length > 0) {
-        await tx.application.updateMany({
-          where: {
-            jobId,
-            status: { notIn: ['HIRED', 'REJECTED', 'JOB_CLOSED'] },
-          },
-          data: { status: 'JOB_CLOSED' },
-        });
-
-        for (const app of activeApps) {
-          await tx.notification.create({
-            data: {
-              userId: app.candidateId,
-              type: 'JOB_CLOSED',
-              title: 'Hiring closed',
-              message: `Hiring for ${job.title} at ${job.company} has been closed.`,
-              isRead: false,
-              metadata: {
-                jobId: job.id,
-                jobTitle: job.title,
-                company: job.company,
-                applicationId: app.id,
-                previousStatus: app.status,
-                newStatus: 'JOB_CLOSED',
-              },
-            },
-          });
+  async updateJob(id: string, updates: Partial<Job>, recruiterId?: string): Promise<Job | null> {
+    if (hasDatabaseUrl()) {
+      try {
+        if (recruiterId) {
+          const existing = await prisma.job.findUnique({ where: { id } });
+          if (existing && existing.recruiterId !== recruiterId) {
+            throw new Error('Forbidden. You can only edit your own job postings.');
+          }
         }
+        const updated = await prisma.job.update({
+          where: { id },
+          data: {
+            title: updates.title,
+            department: updates.department,
+            location: updates.location,
+            type: updates.type,
+            experienceLevel: updates.experienceLevel,
+            salaryMin: updates.salaryMin,
+            salaryMax: updates.salaryMax,
+            salaryCurrency: updates.salaryCurrency,
+            description: updates.description,
+            requirements: updates.requirements,
+            niceToHave: updates.niceToHave,
+            benefits: updates.benefits,
+            skills: updates.skills,
+            status: updates.status,
+            isActive: updates.isActive,
+          },
+        });
+        return mapPrismaJobToJob(updated);
+      } catch (e: any) {
+        if (e.message?.includes('Forbidden')) throw e;
+        console.warn('[DB] Prisma updateJob failed, falling back to memory store:', e);
       }
+    }
 
-      return [job];
-    });
-
-    return mapPrismaJobToJob(updatedJob);
+    const job = inMemoryStore.jobs.get(id);
+    if (!job) return null;
+    if (recruiterId && job.recruiterId !== recruiterId) {
+      throw new Error('Forbidden. You can only edit your own job postings.');
+    }
+    const merged: Job = { ...job, ...updates };
+    inMemoryStore.jobs.set(id, merged);
+    return { ...merged };
   }
 
-  async archiveJob(jobId: string, recruiterId: string): Promise<Job> {
-    const existing = await this.getJobById(jobId);
-    if (!existing) throw new Error('Job requisition not found.');
-    if (existing.recruiterId !== recruiterId) throw new Error('Forbidden. You can only archive your own job postings.');
+  async closeJob(jobId: string, recruiterId: string): Promise<Job | null> {
+    return this.updateJob(
+      jobId,
+      {
+        status: 'CLOSED',
+        isActive: false,
+        closedAt: new Date().toISOString(),
+      },
+      recruiterId
+    );
+  }
 
-    const [updatedJob] = await prisma.$transaction(async (tx) => {
-      const job = await tx.job.update({
-        where: { id: jobId },
-        data: {
-          status: 'ARCHIVED',
-          isActive: false,
-          archivedAt: new Date(),
-        },
-      });
-
-      // Find all active/in-progress applications for this job that aren't already HIRED, REJECTED, or JOB_CLOSED
-      const activeApps = await tx.application.findMany({
-        where: {
-          jobId,
-          status: { notIn: ['HIRED', 'REJECTED', 'JOB_CLOSED'] },
-        },
-      });
-
-      if (activeApps.length > 0) {
-        await tx.application.updateMany({
-          where: {
-            jobId,
-            status: { notIn: ['HIRED', 'REJECTED', 'JOB_CLOSED'] },
-          },
-          data: { status: 'JOB_CLOSED' },
-        });
-
-        for (const app of activeApps) {
-          await tx.notification.create({
-            data: {
-              userId: app.candidateId,
-              type: 'JOB_CLOSED',
-              title: 'Position archived',
-              message: `The position ${job.title} at ${job.company} has been archived.`,
-              isRead: false,
-              metadata: {
-                jobId: job.id,
-                jobTitle: job.title,
-                company: job.company,
-                applicationId: app.id,
-                previousStatus: app.status,
-                newStatus: 'JOB_CLOSED',
-              },
-            },
-          });
-        }
-      }
-
-      return [job];
-    });
-
-    return mapPrismaJobToJob(updatedJob);
+  async archiveJob(jobId: string, recruiterId: string): Promise<Job | null> {
+    return this.updateJob(
+      jobId,
+      {
+        status: 'ARCHIVED',
+        isActive: false,
+        archivedAt: new Date().toISOString(),
+      },
+      recruiterId
+    );
   }
 
   async deleteJob(id: string, recruiterId?: string): Promise<boolean> {
-    if (recruiterId) {
-      await this.archiveJob(id, recruiterId);
-      return true;
+    if (hasDatabaseUrl()) {
+      try {
+        if (recruiterId) {
+          const job = await prisma.job.findUnique({ where: { id } });
+          if (job && job.recruiterId !== recruiterId) {
+            throw new Error('Forbidden. You can only delete your own jobs.');
+          }
+        }
+        await prisma.job.delete({ where: { id } });
+        return true;
+      } catch (e: any) {
+        if (e.message?.includes('Forbidden')) throw e;
+        console.warn('[DB] Prisma deleteJob failed, falling back to memory store:', e);
+      }
     }
-    await prisma.job.delete({
-      where: { id },
-    });
+
+    const job = inMemoryStore.jobs.get(id);
+    if (!job) return true;
+    if (recruiterId && job.recruiterId !== recruiterId) {
+      throw new Error('Forbidden. You can only delete your own jobs.');
+    }
+    inMemoryStore.jobs.delete(id);
     return true;
   }
 
@@ -609,597 +704,691 @@ export class Database {
   // APPLICATION METHODS
   // =========================================================================
   async getApplications(filters?: {
-    jobId?: string;
     candidateId?: string;
+    jobId?: string;
     recruiterId?: string;
     status?: string;
-    excludeArchivedJobs?: boolean;
   }): Promise<Application[]> {
-    const where: any = {};
-    if (filters?.jobId) where.jobId = filters.jobId;
-    if (filters?.candidateId) where.candidateId = filters.candidateId;
-    if (filters?.recruiterId) {
-      where.job = {
-        recruiterId: filters.recruiterId,
-        ...(filters.excludeArchivedJobs ? { status: { not: 'ARCHIVED' } } : {}),
-      };
-    }
-    if (filters?.status && filters.status !== 'ALL') where.status = filters.status;
+    if (hasDatabaseUrl()) {
+      try {
+        const where: any = {};
+        if (filters?.candidateId) where.candidateId = filters.candidateId;
+        if (filters?.jobId) where.jobId = filters.jobId;
+        if (filters?.status) where.status = filters.status;
+        if (filters?.recruiterId) {
+          where.job = { recruiterId: filters.recruiterId };
+        }
 
-    const apps = await prisma.application.findMany({
-      where,
-      include: {
-        interviews: {
+        const apps = await prisma.application.findMany({
+          where,
+          include: { interviews: true },
           orderBy: { createdAt: 'desc' },
-          take: 1,
-        },
-      },
-      orderBy: { appliedDate: 'desc' },
-    });
-    return apps.map(mapPrismaApplicationToApplication);
+        });
+        return apps.map(mapPrismaApplicationToApplication);
+      } catch (e) {
+        console.warn('[DB] Prisma getApplications failed, falling back to memory store:', e);
+      }
+    }
+
+    let list = Array.from(inMemoryStore.applications.values());
+    if (filters?.candidateId) {
+      list = list.filter((a) => a.candidateId === filters.candidateId);
+    }
+    if (filters?.jobId) {
+      list = list.filter((a) => a.jobId === filters.jobId);
+    }
+    if (filters?.status) {
+      list = list.filter((a) => a.status === filters.status);
+    }
+    if (filters?.recruiterId) {
+      const recruiterJobs = new Set(
+        Array.from(inMemoryStore.jobs.values())
+          .filter((j) => j.recruiterId === filters.recruiterId)
+          .map((j) => j.id)
+      );
+      list = list.filter((a) => recruiterJobs.has(a.jobId));
+    }
+
+    return list.sort((a, b) => new Date(b.appliedDate).getTime() - new Date(a.appliedDate).getTime());
   }
 
   async getApplicationById(id: string): Promise<Application | null> {
-    const app = await prisma.application.findUnique({
-      where: { id },
-      include: {
-        interviews: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-        },
-      },
-    });
-    return app ? mapPrismaApplicationToApplication(app) : null;
+    if (hasDatabaseUrl()) {
+      try {
+        const app = await prisma.application.findUnique({
+          where: { id },
+          include: { interviews: true },
+        });
+        if (app) return mapPrismaApplicationToApplication(app);
+      } catch (e) {
+        console.warn('[DB] Prisma getApplicationById failed, falling back to memory store:', e);
+      }
+    }
+    const memApp = inMemoryStore.applications.get(id);
+    return memApp ? { ...memApp } : null;
   }
 
   async createApplication(appData: Omit<Application, 'id' | 'appliedDate'>): Promise<Application> {
-    const targetJob = await this.getJobById(appData.jobId);
-    if (!targetJob) throw new Error('Target job requisition not found.');
-    if (!targetJob.isActive || targetJob.status !== 'ACTIVE') {
-      throw new Error('This job is closed and no longer accepting applications.');
+    if (hasDatabaseUrl()) {
+      try {
+        const targetJob = await prisma.job.findUnique({ where: { id: appData.jobId } });
+        if (targetJob && (targetJob.status === 'CLOSED' || targetJob.status === 'ARCHIVED' || targetJob.isActive === false)) {
+          throw new Error('This job is closed or archived. New applications are not accepted.');
+        }
+
+        const created = await prisma.$transaction(async (tx) => {
+          const app = await tx.application.create({
+            data: {
+              jobId: appData.jobId,
+              jobTitle: appData.jobTitle,
+              company: appData.company || appData.companyName || 'HireFlow Partner',
+              candidateId: appData.candidateId,
+              candidateName: appData.candidateName,
+              candidateEmail: appData.candidateEmail,
+              candidateAvatar: appData.candidateAvatar,
+              candidateTitle: appData.candidateTitle,
+              candidateLocation: appData.candidateLocation,
+              status: appData.status || 'APPLIED',
+              resumeText: appData.resumeText || '',
+              coverLetter: appData.coverLetter,
+              aiMatch: appData.aiMatch as any,
+              matchScore: appData.aiMatch?.overallScore,
+              aiSummary: appData.aiMatch?.aiSummary,
+              recruiterNotes: appData.recruiterNotes,
+            },
+          });
+
+          await tx.job.update({
+            where: { id: appData.jobId },
+            data: { applicantCount: { increment: 1 } },
+          });
+
+          if (targetJob) {
+            await tx.notification.create({
+              data: {
+                userId: targetJob.recruiterId,
+                type: 'NEW_APPLICATION',
+                title: `New applicant for ${targetJob.title}`,
+                message: `${appData.candidateName} submitted an application with a ${appData.aiMatch?.overallScore || 0}% AI Match Score.`,
+                metadata: {
+                  jobId: targetJob.id,
+                  applicationId: app.id,
+                  candidateId: appData.candidateId,
+                  matchScore: appData.aiMatch?.overallScore,
+                },
+              },
+            });
+          }
+
+          return app;
+        });
+
+        return mapPrismaApplicationToApplication(created);
+      } catch (e: any) {
+        if (e.message?.includes('closed') || e.message?.includes('archived')) throw e;
+        console.warn('[DB] Prisma createApplication failed, falling back to memory store:', e);
+      }
     }
 
-    const [app] = await prisma.$transaction(async (tx) => {
-      const existing = await tx.application.findFirst({
-        where: {
-          jobId: appData.jobId,
-          candidateId: appData.candidateId,
-        },
+    const job = inMemoryStore.jobs.get(appData.jobId);
+    if (job && (job.status === 'CLOSED' || job.status === 'ARCHIVED' || !job.isActive)) {
+      throw new Error('This job is closed or archived. New applications are not accepted.');
+    }
+
+    const id = `app_${Date.now()}`;
+    const newApp: Application = {
+      id,
+      jobId: appData.jobId,
+      jobTitle: appData.jobTitle,
+      company: appData.company || appData.companyName || 'HireFlow Partner',
+      companyName: appData.company || appData.companyName || 'HireFlow Partner',
+      candidateId: appData.candidateId,
+      candidateName: appData.candidateName,
+      candidateEmail: appData.candidateEmail,
+      candidateAvatar: appData.candidateAvatar,
+      candidateTitle: appData.candidateTitle,
+      candidateLocation: appData.candidateLocation,
+      appliedDate: new Date().toISOString(),
+      status: appData.status || 'APPLIED',
+      resumeText: appData.resumeText || '',
+      coverLetter: appData.coverLetter,
+      aiMatch: appData.aiMatch,
+      recruiterNotes: appData.recruiterNotes,
+    };
+
+    inMemoryStore.applications.set(id, newApp);
+
+    if (job) {
+      job.applicantCount = (job.applicantCount || 0) + 1;
+      inMemoryStore.jobs.set(job.id, job);
+
+      const notifId = `notif_${Date.now()}`;
+      inMemoryStore.notifications.set(notifId, {
+        id: notifId,
+        userId: job.recruiterId,
+        type: 'NEW_APPLICATION',
+        title: `New applicant for ${job.title}`,
+        message: `${appData.candidateName} submitted an application with a ${appData.aiMatch?.overallScore || 0}% AI Match Score.`,
+        description: `${appData.candidateName} submitted an application with a ${appData.aiMatch?.overallScore || 0}% AI Match Score.`,
+        isRead: false,
+        read: false,
+        time: 'Just now',
+        createdAt: new Date().toISOString(),
+        metadata: { jobId: job.id, applicationId: id },
       });
-      if (existing) {
-        throw new Error('You have already applied for this position.');
-      }
+    }
 
-      const createdApp = await tx.application.create({
-        data: {
-          jobId: appData.jobId,
-          jobTitle: appData.jobTitle,
-          company: appData.company,
-          candidateId: appData.candidateId,
-          candidateName: appData.candidateName,
-          candidateEmail: appData.candidateEmail,
-          candidateAvatar: appData.candidateAvatar,
-          candidateTitle: appData.candidateTitle,
-          candidateLocation: appData.candidateLocation,
-          status: appData.status || 'APPLIED',
-          resumeText: appData.resumeText,
-          coverLetter: appData.coverLetter,
-          aiMatch: appData.aiMatch as any,
-          recruiterNotes: appData.recruiterNotes,
-          interviewDate: appData.interviewDate,
-          interviewType: appData.interviewType,
-        },
-      });
-
-      await tx.job.update({
-        where: { id: appData.jobId },
-        data: { applicantCount: { increment: 1 } },
-      });
-
-      await tx.notification.create({
-        data: {
-          userId: targetJob.recruiterId,
-          type: 'NEW_APPLICATION',
-          title: `New applicant for ${targetJob.title}`,
-          message: `${appData.candidateName} has submitted an application for ${targetJob.title}.`,
-          metadata: {
-            jobId: targetJob.id,
-            jobTitle: targetJob.title,
-            applicationId: createdApp.id,
-            candidateId: appData.candidateId,
-            candidateName: appData.candidateName,
-          },
-        },
-      });
-
-      return [createdApp];
-    });
-
-    return mapPrismaApplicationToApplication(app);
+    return { ...newApp };
   }
 
-  async updateApplication(id: string, updates: Partial<Application>): Promise<Application | null> {
-    return await prisma.$transaction(async (tx) => {
-      const existing = await tx.application.findUnique({
-        where: { id },
-        include: {
-          job: true,
-          interviews: {
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-          },
-        },
-      });
-
-      if (!existing) return null;
-
-      // Validate job lifecycle state for stage/status transitions
-      if (updates.status !== undefined && existing.job) {
-        const isJobInactive =
-          existing.job.status === 'CLOSED' ||
-          existing.job.status === 'ARCHIVED' ||
-          existing.job.isActive === false;
-
-        if (isJobInactive) {
-          throw new Error('This job is no longer active. Candidate status cannot be changed.');
-        }
-      }
-
-      const data: any = {};
-      if (updates.status !== undefined) data.status = updates.status;
-      if (updates.recruiterNotes !== undefined) data.recruiterNotes = updates.recruiterNotes;
-      if (updates.interviewDate !== undefined) data.interviewDate = updates.interviewDate;
-      if (updates.interviewType !== undefined) data.interviewType = updates.interviewType;
-
-      const app = await tx.application.update({
-        where: { id },
-        data,
-        include: {
-          interviews: {
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-          },
-        },
-      });
-
-      // Normalize status helper for duplicate prevention
-      const normalizeStatus = (s?: string) => {
-        if (!s) return '';
-        const upper = s.toUpperCase().trim();
-        if (upper === 'SCREENING') return 'SHORTLISTED';
-        if (upper === 'INTERVIEWING') return 'INTERVIEW';
-        if (upper === 'OFFERED') return 'OFFER';
-        if (upper === 'CLOSED') return 'JOB_CLOSED';
-        return upper;
-      };
-
-      const oldStatusNorm = normalizeStatus(existing.status);
-      const newStatusNorm = updates.status ? normalizeStatus(updates.status) : oldStatusNorm;
-      const statusChanged = updates.status !== undefined && oldStatusNorm !== newStatusNorm;
-
-      if (statusChanged && updates.status) {
-        const jobTitle = existing.jobTitle || existing.job?.title || 'Position';
-        const companyName = existing.company || existing.job?.company || 'Company';
-
-        let notifInfo: { type: string; title: string; message: string } | null = null;
-
-        if (newStatusNorm === 'SHORTLISTED') {
-          notifInfo = {
-            type: 'APPLICATION_SHORTLISTED',
-            title: 'Application shortlisted',
-            message: `Your application for ${jobTitle} at ${companyName} has been shortlisted.`,
-          };
-        } else if (newStatusNorm === 'INTERVIEW') {
-          notifInfo = {
-            type: 'APPLICATION_INTERVIEW',
-            title: 'Interview stage reached',
-            message: `Your application for ${jobTitle} at ${companyName} has moved to the interview stage.`,
-          };
-        } else if (newStatusNorm === 'OFFER') {
-          notifInfo = {
-            type: 'APPLICATION_OFFER',
-            title: 'Offer received',
-            message: `Congratulations! You have received an offer for ${jobTitle} at ${companyName}.`,
-          };
-        } else if (newStatusNorm === 'HIRED') {
-          notifInfo = {
-            type: 'APPLICATION_HIRED',
-            title: "Congratulations — You're hired!",
-            message: `Your application for ${jobTitle} at ${companyName} has been marked as hired.`,
-          };
-        } else if (newStatusNorm === 'REJECTED') {
-          notifInfo = {
-            type: 'APPLICATION_REJECTED',
-            title: 'Application update',
-            message: `Your application for ${jobTitle} at ${companyName} was not selected.`,
-          };
-        } else if (newStatusNorm === 'JOB_CLOSED') {
-          notifInfo = {
-            type: 'JOB_CLOSED',
-            title: 'Hiring closed',
-            message: `Hiring for ${jobTitle} at ${companyName} has been closed.`,
-          };
+  async updateApplication(id: string, updates: Partial<Application>, recruiterId?: string): Promise<Application | null> {
+    if (hasDatabaseUrl()) {
+      try {
+        const app = await prisma.application.findUnique({
+          where: { id },
+          include: { job: true },
+        });
+        if (!app) return null;
+        if (recruiterId && app.job.recruiterId !== recruiterId) {
+          throw new Error('Forbidden. You can only update applications for your own job requisitions.');
         }
 
-        if (notifInfo) {
-          // existing.candidateId is User.id in Prisma schema
-          await tx.notification.create({
+        const updated = await prisma.application.update({
+          where: { id },
+          data: {
+            status: updates.status,
+            recruiterNotes: updates.recruiterNotes,
+            interviewDate: updates.interviewDate,
+            interviewType: updates.interviewType,
+          },
+          include: { interviews: true },
+        });
+
+        if (updates.status && updates.status !== app.status) {
+          await prisma.notification.create({
             data: {
-              userId: existing.candidateId,
-              type: notifInfo.type,
-              title: notifInfo.title,
-              message: notifInfo.message,
-              isRead: false,
-              metadata: {
-                applicationId: id,
-                jobId: existing.jobId,
-                jobTitle,
-                company: companyName,
-                previousStatus: existing.status,
-                newStatus: updates.status,
-              },
+              userId: app.candidateId,
+              type: `APPLICATION_STATUS_CHANGED`,
+              title: `Application Status Update`,
+              message: `Your application status for ${app.jobTitle} at ${app.company} has been updated to "${updates.status}".`,
+              metadata: { applicationId: app.id, jobId: app.jobId, status: updates.status },
             },
           });
         }
+
+        return mapPrismaApplicationToApplication(updated);
+      } catch (e: any) {
+        if (e.message?.includes('Forbidden')) throw e;
+        console.warn('[DB] Prisma updateApplication failed, falling back to memory store:', e);
       }
+    }
 
-      return mapPrismaApplicationToApplication(app);
-    });
+    const app = inMemoryStore.applications.get(id);
+    if (!app) return null;
+    const merged: Application = { ...app, ...updates };
+    inMemoryStore.applications.set(id, merged);
+
+    if (updates.status && updates.status !== app.status) {
+      const notifId = `notif_${Date.now()}`;
+      inMemoryStore.notifications.set(notifId, {
+        id: notifId,
+        userId: app.candidateId,
+        type: `APPLICATION_STATUS_CHANGED`,
+        title: `Application Status Update`,
+        message: `Your application status for ${app.jobTitle} at ${app.company} has been updated to "${updates.status}".`,
+        description: `Your application status for ${app.jobTitle} at ${app.company} has been updated to "${updates.status}".`,
+        isRead: false,
+        read: false,
+        time: 'Just now',
+        createdAt: new Date().toISOString(),
+        metadata: { applicationId: app.id, jobId: app.jobId, status: updates.status },
+      });
+    }
+
+    return { ...merged };
   }
 
   // =========================================================================
-  // PROFILE METHODS
+  // CANDIDATE PROFILE METHODS
   // =========================================================================
-  async getProfile(userId: string): Promise<CandidateProfile> {
-    const userWithProfile = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { candidateProfile: true },
-    });
-
-    if (!userWithProfile) {
-      throw new Error(`User with ID ${userId} not found in database.`);
+  async getProfile(userId: string): Promise<CandidateProfile | null> {
+    if (hasDatabaseUrl()) {
+      try {
+        const profile = await prisma.candidateProfile.findUnique({
+          where: { userId },
+          include: { user: true },
+        });
+        if (profile) return mapPrismaCandidateProfileToCandidateProfile(profile, profile.user);
+      } catch (e) {
+        console.warn('[DB] Prisma getProfile failed, falling back to memory store:', e);
+      }
     }
 
-    let profile = userWithProfile.candidateProfile;
-    if (!profile) {
-      profile = await prisma.candidateProfile.create({
-        data: {
-          userId,
-          headline: userWithProfile.title ? `${userWithProfile.title} | Open to Opportunities` : 'Software Professional | Open to Opportunities',
-          summary: 'Experienced and motivated professional seeking innovative software engineering and AI challenges.',
-          location: userWithProfile.location || 'Remote',
-          phone: userWithProfile.phone || '',
-          skills: [],
-          experience: [],
-          education: [],
-          resumeText: `${userWithProfile.name} - ${userWithProfile.title || 'Software Professional'}`,
-          profileStrength: 85,
-        },
-      });
+    const p = inMemoryStore.candidateProfiles.get(userId);
+    if (p) return { ...p };
+    const u = inMemoryStore.users.get(userId);
+    if (u) {
+      return {
+        id: `cprof_${userId}`,
+        userId,
+        name: u.name,
+        email: u.email,
+        title: u.title,
+        avatar: u.avatar,
+        phone: u.phone || '',
+        location: u.location || 'Remote',
+        headline: `${u.title || 'Professional'} | Open to Opportunities`,
+        summary: 'Motivated software professional.',
+        skills: [],
+        experience: [],
+        education: [],
+        resumeText: '',
+        profileStrength: 50,
+      };
     }
-
-    const mapped = mapPrismaCandidateProfileToProfile(profile);
-    return {
-      ...mapped,
-      name: userWithProfile.name,
-      email: userWithProfile.email,
-      title: userWithProfile.title || profile.headline,
-      avatar: userWithProfile.avatar || undefined,
-    };
+    return null;
   }
 
-  async updateProfile(
-    userId: string,
-    updates: Partial<CandidateProfile> & { name?: string; title?: string }
-  ): Promise<{ user: DBUser; profile: CandidateProfile }> {
-    return this.updateCandidateProfileAndUser(userId, updates as any);
+  async updateProfile(userId: string, updates: Partial<CandidateProfile>): Promise<CandidateProfile | null> {
+    return this.updateCandidateProfileAndUser(userId, updates);
   }
 
-  async updateCandidateProfileAndUser(
-    userId: string,
-    updates: {
-      name?: string;
-      title?: string;
-      headline?: string;
-      summary?: string;
-      location?: string;
-      phone?: string;
-      portfolioUrl?: string;
-      githubUrl?: string;
-      linkedinUrl?: string;
-      skills?: any;
-      experience?: any;
-      education?: any;
-      resumeText?: string;
-      resumeFileName?: string;
-      avatar?: string;
-      avatarUrl?: string;
+  async updateCandidateProfileAndUser(userId: string, updates: Partial<CandidateProfile>): Promise<CandidateProfile | null> {
+    if (hasDatabaseUrl()) {
+      try {
+        const [prof, user] = await prisma.$transaction(async (tx) => {
+          const u = await tx.user.update({
+            where: { id: userId },
+            data: {
+              name: updates.name,
+              title: updates.title,
+              avatar: updates.avatar || updates.avatarUrl,
+              phone: updates.phone,
+              location: updates.location,
+            },
+          });
+
+          const p = await tx.candidateProfile.upsert({
+            where: { userId },
+            update: {
+              headline: updates.headline,
+              summary: updates.summary,
+              phone: updates.phone,
+              location: updates.location,
+              skills: updates.skills as any,
+              portfolioUrl: updates.portfolioUrl,
+              githubUrl: updates.githubUrl,
+              linkedinUrl: updates.linkedinUrl,
+              experience: updates.experience as any,
+              education: updates.education as any,
+              resumeText: updates.resumeText,
+              resumeFileName: updates.resumeFileName,
+              profileStrength: updates.profileStrength,
+            },
+            create: {
+              userId,
+              headline: updates.headline || 'Software Professional',
+              summary: updates.summary || '',
+              phone: updates.phone || '',
+              location: updates.location || 'Remote',
+              skills: (updates.skills || []) as any,
+              experience: (updates.experience || []) as any,
+              education: (updates.education || []) as any,
+              resumeText: updates.resumeText || '',
+              profileStrength: updates.profileStrength || 70,
+            },
+          });
+
+          return [p, u];
+        });
+
+        return mapPrismaCandidateProfileToCandidateProfile(prof, user);
+      } catch (e) {
+        console.warn('[DB] Prisma updateCandidateProfile failed, falling back to memory store:', e);
+      }
     }
-  ): Promise<{ user: DBUser; profile: CandidateProfile }> {
-    const avatarValue = updates.avatarUrl !== undefined ? updates.avatarUrl : updates.avatar;
 
-    const [updatedUser, updatedProfile] = await prisma.$transaction(async (tx) => {
-      const userUpdates: any = {};
-      if (updates.name !== undefined) userUpdates.name = updates.name;
-      if (updates.title !== undefined) userUpdates.title = updates.title;
-      if (updates.location !== undefined) userUpdates.location = updates.location;
-      if (updates.phone !== undefined) userUpdates.phone = updates.phone;
-      if (avatarValue !== undefined) userUpdates.avatar = avatarValue;
-
-      const user = await tx.user.update({
-        where: { id: userId },
-        data: userUpdates,
-      });
-
-      const profUpdates: any = {};
-      if (updates.headline !== undefined) profUpdates.headline = updates.headline;
-      else if (updates.title !== undefined) profUpdates.headline = `${updates.title} | Open to Opportunities`;
-      if (updates.summary !== undefined) profUpdates.summary = updates.summary;
-      if (updates.location !== undefined) profUpdates.location = updates.location;
-      if (updates.phone !== undefined) profUpdates.phone = updates.phone;
-      if (updates.portfolioUrl !== undefined) profUpdates.portfolioUrl = updates.portfolioUrl;
-      if (updates.githubUrl !== undefined) profUpdates.githubUrl = updates.githubUrl;
-      if (updates.linkedinUrl !== undefined) profUpdates.linkedinUrl = updates.linkedinUrl;
-      if (updates.skills !== undefined) profUpdates.skills = updates.skills as any;
-      if (updates.experience !== undefined) profUpdates.experience = updates.experience as any;
-      if (updates.education !== undefined) profUpdates.education = updates.education as any;
-      if (updates.resumeText !== undefined) profUpdates.resumeText = updates.resumeText;
-      if (updates.resumeFileName !== undefined) profUpdates.resumeFileName = updates.resumeFileName;
-      if (avatarValue !== undefined) profUpdates.avatarUrl = avatarValue;
-
-      let strength = 40;
-      if (updates.summary || profUpdates.summary) strength += 15;
-      if ((updates.skills && updates.skills.length > 0) || (profUpdates.skills && profUpdates.skills.length > 0)) strength += 15;
-      if ((updates.experience && updates.experience.length > 0) || (profUpdates.experience && profUpdates.experience.length > 0)) strength += 15;
-      if (updates.resumeText || profUpdates.resumeText) strength += 15;
-      profUpdates.profileStrength = Math.min(100, strength);
-
-      const titleVal = updates.title || updates.headline;
-      const prof = await tx.candidateProfile.upsert({
-        where: { userId },
-        update: profUpdates,
-        create: {
-          userId,
-          headline: titleVal || user.title || 'Software Professional | Open to Opportunities',
-          summary: updates.summary || 'Experienced professional seeking innovative challenges.',
-          location: updates.location || user.location || 'Remote',
-          phone: updates.phone || user.phone || '',
-          skills: (updates.skills || []) as any,
-          experience: (updates.experience || []) as any,
-          education: (updates.education || []) as any,
-          resumeText: updates.resumeText || '',
-          resumeFileName: updates.resumeFileName,
-          avatarUrl: avatarValue || null,
-          profileStrength: Math.min(100, strength),
-        },
-      });
-
-      return [user, prof];
-    });
-
-    const mappedUser = mapPrismaUserToDBUser(updatedUser);
-    const mappedProfile = mapPrismaCandidateProfileToProfile(updatedProfile);
-
-    return {
-      user: mappedUser,
-      profile: {
-        ...mappedProfile,
-        name: mappedUser.name,
-        email: mappedUser.email,
-        title: mappedUser.title || mappedProfile.headline,
-        avatar: mappedUser.avatar || mappedProfile.avatarUrl || undefined,
-        avatarUrl: mappedProfile.avatarUrl || mappedUser.avatar || undefined,
-      },
+    const currentProf = inMemoryStore.candidateProfiles.get(userId) || {
+      id: `cprof_${userId}`,
+      userId,
+      phone: '',
+      location: 'Remote',
+      skills: [],
+      experience: [],
+      education: [],
+      resumeText: '',
+      profileStrength: 75,
+      headline: '',
+      summary: '',
     };
+
+    const mergedProf: CandidateProfile = {
+      ...currentProf,
+      ...updates,
+      location: updates.location || currentProf.location || 'Remote',
+      phone: updates.phone || currentProf.phone || '',
+    };
+    inMemoryStore.candidateProfiles.set(userId, mergedProf);
+
+    const u = inMemoryStore.users.get(userId);
+    if (u) {
+      if (updates.name) u.name = updates.name;
+      if (updates.title) u.title = updates.title;
+      if (updates.avatar || updates.avatarUrl) u.avatar = updates.avatar || updates.avatarUrl;
+      if (updates.phone) u.phone = updates.phone;
+      if (updates.location) u.location = updates.location;
+      inMemoryStore.users.set(userId, u);
+    }
+
+    return { ...mergedProf };
   }
 
   // =========================================================================
   // RECRUITER PROFILE METHODS
   // =========================================================================
-  async getRecruiterProfile(userId: string): Promise<RecruiterProfile> {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { recruiterProfile: true },
-    });
-
-    if (!user) {
-      throw new Error(`User with ID ${userId} not found in database.`);
-    }
-
-    let profile = user.recruiterProfile;
-    if (!profile) {
-      profile = await prisma.recruiterProfile.create({
-        data: {
-          userId,
-          companyName: user.companyName || 'My Company',
-          jobTitle: user.title || 'Head of Talent Acquisition',
-          companyLocation: user.companyLocation || 'Remote',
-          companyWebsite: '',
-          companyDescription: 'Fast-growing innovative team building industry-leading solutions.',
-          companySize: '50-200 employees',
-          industry: 'Technology & Software',
-        },
-      });
-    }
-
-    return mapPrismaRecruiterProfileToProfile(profile);
-  }
-
-  async updateRecruiterProfile(
-    userId: string,
-    updates: Partial<RecruiterProfile> & { name?: string; title?: string }
-  ): Promise<{ user: DBUser; profile: RecruiterProfile }> {
-    const [updatedUser, updatedProfile] = await prisma.$transaction(async (tx) => {
-      const userUpdates: any = {};
-      if (updates.name !== undefined) userUpdates.name = updates.name;
-      if (updates.title !== undefined) userUpdates.title = updates.title;
-      if (updates.companyName !== undefined) userUpdates.companyName = updates.companyName;
-      if (updates.companyLocation !== undefined) userUpdates.companyLocation = updates.companyLocation;
-      if (updates.companyLogoUrl !== undefined || updates.companyLogo !== undefined) {
-        userUpdates.avatar = updates.companyLogoUrl || updates.companyLogo;
+  async getRecruiterProfile(userId: string): Promise<RecruiterProfile | null> {
+    if (hasDatabaseUrl()) {
+      try {
+        const profile = await prisma.recruiterProfile.findUnique({
+          where: { userId },
+          include: { user: true },
+        });
+        if (profile) return mapPrismaRecruiterProfileToRecruiterProfile(profile, profile.user);
+      } catch (e) {
+        console.warn('[DB] Prisma getRecruiterProfile failed, falling back to memory store:', e);
       }
+    }
 
-      const user = await tx.user.update({
-        where: { id: userId },
-        data: userUpdates,
-      });
-
-      const profUpdates: any = {};
-      if (updates.companyName !== undefined) profUpdates.companyName = updates.companyName;
-      if (updates.jobTitle !== undefined) profUpdates.jobTitle = updates.jobTitle;
-      else if (updates.title !== undefined) profUpdates.jobTitle = updates.title;
-      if (updates.companyLocation !== undefined) profUpdates.companyLocation = updates.companyLocation;
-      if (updates.companyWebsite !== undefined) profUpdates.companyWebsite = updates.companyWebsite;
-      if (updates.companyDescription !== undefined) profUpdates.companyDescription = updates.companyDescription;
-      if (updates.companySize !== undefined) profUpdates.companySize = updates.companySize;
-      if (updates.industry !== undefined) profUpdates.industry = updates.industry;
-      if (updates.companyLogo !== undefined) profUpdates.companyLogo = updates.companyLogo;
-      if (updates.companyLogoUrl !== undefined) profUpdates.companyLogo = updates.companyLogoUrl;
-
-      const profile = await tx.recruiterProfile.upsert({
-        where: { userId },
-        update: profUpdates,
-        create: {
-          userId,
-          companyName: updates.companyName || user.companyName || 'My Company',
-          jobTitle: updates.jobTitle || updates.title || user.title || 'Head of Talent Acquisition',
-          companyLocation: updates.companyLocation || user.companyLocation || 'Remote',
-          companyWebsite: updates.companyWebsite || '',
-          companyDescription: updates.companyDescription || 'Fast-growing innovative team.',
-          companySize: updates.companySize || '50-200 employees',
-          industry: updates.industry || 'Technology',
-          companyLogo: updates.companyLogo || updates.companyLogoUrl || null,
-        },
-      });
-
-      return [user, profile];
-    });
-
-    return {
-      user: mapPrismaUserToDBUser(updatedUser),
-      profile: mapPrismaRecruiterProfileToProfile(updatedProfile),
-    };
+    const p = inMemoryStore.recruiterProfiles.get(userId);
+    if (p) return { ...p };
+    const u = inMemoryStore.users.get(userId);
+    if (u) {
+      return {
+        id: `rprof_${userId}`,
+        userId,
+        companyName: u.companyName || 'My Company',
+        jobTitle: u.title || 'Recruiter',
+        companyLocation: u.companyLocation || 'Remote',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    return null;
   }
 
-  async updateRecruiterProfileAndUser(
-    userId: string,
-    updates: Partial<RecruiterProfile> & { name?: string; title?: string }
-  ): Promise<{ user: DBUser; profile: RecruiterProfile }> {
-    return this.updateRecruiterProfile(userId, updates);
+  async updateRecruiterProfile(userId: string, updates: Partial<RecruiterProfile>): Promise<RecruiterProfile | null> {
+    return this.updateRecruiterProfileAndUser(userId, updates);
+  }
+
+  async updateRecruiterProfileAndUser(userId: string, updates: Partial<RecruiterProfile>): Promise<RecruiterProfile | null> {
+    if (hasDatabaseUrl()) {
+      try {
+        const [prof, user] = await prisma.$transaction(async (tx) => {
+          const u = await tx.user.update({
+            where: { id: userId },
+            data: {
+              companyName: updates.companyName,
+              companyLocation: updates.companyLocation,
+              title: updates.jobTitle,
+              avatar: updates.companyLogo || updates.companyLogoUrl,
+            },
+          });
+
+          const p = await tx.recruiterProfile.upsert({
+            where: { userId },
+            update: {
+              companyName: updates.companyName || 'My Company',
+              jobTitle: updates.jobTitle,
+              companyLocation: updates.companyLocation,
+              companyWebsite: updates.companyWebsite,
+              companyDescription: updates.companyDescription,
+              companySize: updates.companySize,
+              companyLogo: updates.companyLogo || updates.companyLogoUrl,
+              industry: updates.industry,
+            },
+            create: {
+              userId,
+              companyName: updates.companyName || 'My Company',
+              jobTitle: updates.jobTitle,
+              companyLocation: updates.companyLocation,
+              companyWebsite: updates.companyWebsite,
+              companyDescription: updates.companyDescription,
+              companySize: updates.companySize,
+              companyLogo: updates.companyLogo || updates.companyLogoUrl,
+              industry: updates.industry,
+            },
+          });
+
+          return [p, u];
+        });
+
+        return mapPrismaRecruiterProfileToRecruiterProfile(prof, user);
+      } catch (e) {
+        console.warn('[DB] Prisma updateRecruiterProfile failed, falling back to memory store:', e);
+      }
+    }
+
+    const currentProf = inMemoryStore.recruiterProfiles.get(userId) || {
+      id: `rprof_${userId}`,
+      userId,
+      companyName: 'My Company',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const merged: RecruiterProfile = {
+      ...currentProf,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    inMemoryStore.recruiterProfiles.set(userId, merged);
+
+    const u = inMemoryStore.users.get(userId);
+    if (u) {
+      if (updates.companyName) u.companyName = updates.companyName;
+      if (updates.companyLocation) u.companyLocation = updates.companyLocation;
+      if (updates.jobTitle) u.title = updates.jobTitle;
+      if (updates.companyLogo || updates.companyLogoUrl) u.avatar = updates.companyLogo || updates.companyLogoUrl;
+      inMemoryStore.users.set(userId, u);
+    }
+
+    return { ...merged };
   }
 
   // =========================================================================
   // INTERVIEW METHODS
   // =========================================================================
-  async getInterviews(filters?: { applicationId?: string; recruiterId?: string }): Promise<InterviewSchedule[]> {
-    const where: any = {};
-    if (filters?.applicationId) {
-      where.applicationId = filters.applicationId;
-    }
-    if (filters?.recruiterId) {
-      where.application = {
-        job: { recruiterId: filters.recruiterId },
-      };
+  async getInterviews(filters?: {
+    applicationId?: string;
+    candidateName?: string;
+    recruiterId?: string;
+  }): Promise<InterviewSchedule[]> {
+    if (hasDatabaseUrl()) {
+      try {
+        const where: any = {};
+        if (filters?.applicationId) where.applicationId = filters.applicationId;
+        if (filters?.candidateName) where.candidateName = { contains: filters.candidateName, mode: 'insensitive' };
+        if (filters?.recruiterId) {
+          where.application = {
+            job: { recruiterId: filters.recruiterId },
+          };
+        }
+
+        const items = await prisma.interview.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+        });
+        return items.map(mapPrismaInterviewToInterview);
+      } catch (e) {
+        console.warn('[DB] Prisma getInterviews failed, falling back to memory store:', e);
+      }
     }
 
-    const items = await prisma.interview.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-    return items.map(mapPrismaInterviewToInterview);
+    let list = Array.from(inMemoryStore.interviews.values());
+    if (filters?.applicationId) {
+      list = list.filter((i) => i.applicationId === filters.applicationId);
+    }
+    if (filters?.candidateName) {
+      const name = filters.candidateName.toLowerCase();
+      list = list.filter((i) => i.candidateName.toLowerCase().includes(name));
+    }
+    return list;
   }
 
   async getInterviewById(id: string): Promise<InterviewSchedule | null> {
-    const item = await prisma.interview.findUnique({
-      where: { id },
-    });
-    return item ? mapPrismaInterviewToInterview(item) : null;
+    if (hasDatabaseUrl()) {
+      try {
+        const item = await prisma.interview.findUnique({ where: { id } });
+        if (item) return mapPrismaInterviewToInterview(item);
+      } catch (e) {
+        console.warn('[DB] Prisma getInterviewById failed, falling back to memory store:', e);
+      }
+    }
+    const memItem = inMemoryStore.interviews.get(id);
+    return memItem ? { ...memItem } : null;
   }
 
   async createInterview(data: Omit<InterviewSchedule, 'id'>, recruiterId?: string): Promise<InterviewSchedule> {
-    const targetApp = await this.getApplicationById(data.applicationId);
-    if (!targetApp) throw new Error('Target application not found for interview schedule.');
+    if (hasDatabaseUrl()) {
+      try {
+        const targetApp = await this.getApplicationById(data.applicationId);
+        if (!targetApp) throw new Error('Target application not found for interview schedule.');
 
-    const job = await this.getJobById(targetApp.jobId);
-    if (!job) throw new Error('Associated job requisition not found.');
+        const [interview] = await prisma.$transaction(async (tx) => {
+          const item = await tx.interview.create({
+            data: {
+              applicationId: data.applicationId,
+              candidateName: data.candidateName,
+              jobTitle: data.jobTitle,
+              date: data.date,
+              time: data.time,
+              interviewer: data.interviewer,
+              type: data.type || 'Technical',
+              meetingLink: data.meetingLink || 'https://meet.google.com/hfw-live-session',
+              status: data.status || 'SCHEDULED',
+              notes: data.notes,
+            },
+          });
 
-    if (recruiterId && job.recruiterId !== recruiterId) {
-      throw new Error('Forbidden. You can only schedule interviews for your own job requisitions.');
+          await tx.application.update({
+            where: { id: data.applicationId },
+            data: {
+              status: 'INTERVIEWING',
+              interviewDate: data.date,
+              interviewType: data.type || 'Technical',
+            },
+          });
+
+          await tx.notification.create({
+            data: {
+              userId: targetApp.candidateId,
+              type: 'INTERVIEW_SCHEDULED',
+              title: `Interview scheduled for ${data.jobTitle}`,
+              message: `Your ${data.type || 'interview'} with ${data.interviewer} has been scheduled for ${data.date} at ${data.time}.`,
+              metadata: {
+                interviewId: item.id,
+                applicationId: targetApp.id,
+                jobTitle: data.jobTitle,
+                date: data.date,
+                time: data.time,
+                meetingLink: data.meetingLink,
+              },
+            },
+          });
+
+          return [item];
+        });
+
+        return mapPrismaInterviewToInterview(interview);
+      } catch (e: any) {
+        if (e.message?.includes('Target application') || e.message?.includes('Forbidden')) throw e;
+        console.warn('[DB] Prisma createInterview failed, falling back to memory store:', e);
+      }
     }
 
-    if (job.status === 'CLOSED' || job.status === 'ARCHIVED' || job.isActive === false) {
-      throw new Error('This job is no longer active. Interviews cannot be scheduled.');
-    }
+    const app = inMemoryStore.applications.get(data.applicationId);
+    const id = `int_${Date.now()}`;
+    const newInterview: InterviewSchedule = {
+      id,
+      applicationId: data.applicationId,
+      candidateName: data.candidateName,
+      jobTitle: data.jobTitle,
+      date: data.date,
+      time: data.time,
+      interviewer: data.interviewer,
+      type: data.type || 'Technical',
+      meetingLink: data.meetingLink || 'https://meet.google.com/hfw-live-session',
+      status: data.status || 'SCHEDULED',
+      notes: data.notes,
+    };
 
-    const [interview] = await prisma.$transaction(async (tx) => {
-      const item = await tx.interview.create({
-        data: {
-          applicationId: data.applicationId,
-          candidateName: data.candidateName,
+    inMemoryStore.interviews.set(id, newInterview);
+
+    if (app) {
+      app.status = 'INTERVIEWING';
+      app.interviewDate = data.date;
+      app.interviewType = data.type || 'Technical';
+      app.interviewDetails = {
+        date: data.date,
+        time: data.time,
+        type: data.type || 'Technical',
+      };
+      inMemoryStore.applications.set(app.id, app);
+
+      const notifId = `notif_${Date.now()}`;
+      inMemoryStore.notifications.set(notifId, {
+        id: notifId,
+        userId: app.candidateId,
+        type: 'INTERVIEW_SCHEDULED',
+        title: `Interview scheduled for ${data.jobTitle}`,
+        message: `Your ${data.type || 'interview'} with ${data.interviewer} has been scheduled for ${data.date} at ${data.time}.`,
+        description: `Your ${data.type || 'interview'} with ${data.interviewer} has been scheduled for ${data.date} at ${data.time}.`,
+        isRead: false,
+        read: false,
+        time: 'Just now',
+        createdAt: new Date().toISOString(),
+        metadata: {
+          interviewId: id,
+          applicationId: app.id,
           jobTitle: data.jobTitle,
           date: data.date,
           time: data.time,
-          interviewer: data.interviewer,
-          type: data.type || 'Technical',
-          meetingLink: data.meetingLink || 'https://meet.google.com/hfw-live-session',
-          status: data.status || 'SCHEDULED',
-          notes: data.notes,
         },
       });
+    }
 
-      await tx.application.update({
-        where: { id: data.applicationId },
-        data: {
-          status: 'INTERVIEW',
-          interviewDate: data.date,
-          interviewType: data.type || 'Technical',
-        },
-      });
-
-      await tx.notification.create({
-        data: {
-          userId: targetApp.candidateId,
-          type: 'INTERVIEW_SCHEDULED',
-          title: `Interview scheduled for ${data.jobTitle}`,
-          message: `Your ${data.type || 'interview'} with ${data.interviewer} has been scheduled for ${data.date} at ${data.time}.`,
-          metadata: {
-            interviewId: item.id,
-            applicationId: targetApp.id,
-            jobTitle: data.jobTitle,
-            date: data.date,
-            time: data.time,
-            meetingLink: data.meetingLink,
-          },
-        },
-      });
-
-      return [item];
-    });
-
-    return mapPrismaInterviewToInterview(interview);
+    return { ...newInterview };
   }
 
   async updateInterview(id: string, updates: Partial<InterviewSchedule>): Promise<InterviewSchedule | null> {
-    const data: any = {};
-    if (updates.date !== undefined) data.date = updates.date;
-    if (updates.time !== undefined) data.time = updates.time;
-    if (updates.interviewer !== undefined) data.interviewer = updates.interviewer;
-    if (updates.type !== undefined) data.type = updates.type;
-    if (updates.meetingLink !== undefined) data.meetingLink = updates.meetingLink;
-    if (updates.status !== undefined) data.status = updates.status;
-    if (updates.notes !== undefined) data.notes = updates.notes;
-
-    const item = await prisma.interview.update({
-      where: { id },
-      data,
-    });
-    return item ? mapPrismaInterviewToInterview(item) : null;
+    if (hasDatabaseUrl()) {
+      try {
+        const item = await prisma.interview.update({
+          where: { id },
+          data: updates as any,
+        });
+        return mapPrismaInterviewToInterview(item);
+      } catch (e) {
+        console.warn('[DB] Prisma updateInterview failed, falling back to memory store:', e);
+      }
+    }
+    const item = inMemoryStore.interviews.get(id);
+    if (!item) return null;
+    const merged: InterviewSchedule = { ...item, ...updates };
+    inMemoryStore.interviews.set(id, merged);
+    return { ...merged };
   }
 
   async deleteInterview(id: string): Promise<boolean> {
-    await prisma.interview.delete({
-      where: { id },
-    });
+    if (hasDatabaseUrl()) {
+      try {
+        await prisma.interview.delete({ where: { id } });
+        return true;
+      } catch (e) {
+        console.warn('[DB] Prisma deleteInterview failed, falling back to memory store:', e);
+      }
+    }
+    inMemoryStore.interviews.delete(id);
     return true;
   }
 
@@ -1207,12 +1396,22 @@ export class Database {
   // NOTIFICATION METHODS
   // =========================================================================
   async getNotifications(userId: string): Promise<NotificationItem[]> {
-    const list = await prisma.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-    return list.map(mapPrismaNotificationToNotification);
+    if (hasDatabaseUrl()) {
+      try {
+        const list = await prisma.notification.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+        });
+        return list.map(mapPrismaNotificationToNotification);
+      } catch (e) {
+        console.warn('[DB] Prisma getNotifications failed, falling back to memory store:', e);
+      }
+    }
+
+    return Array.from(inMemoryStore.notifications.values())
+      .filter((n) => n.userId === userId)
+      .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
   }
 
   async createNotification(data: {
@@ -1222,23 +1421,59 @@ export class Database {
     message: string;
     metadata?: any;
   }): Promise<NotificationItem> {
-    const item = await prisma.notification.create({
-      data: {
-        userId: data.userId,
-        type: data.type,
-        title: data.title,
-        message: data.message,
-        metadata: data.metadata || {},
-      },
-    });
-    return mapPrismaNotificationToNotification(item);
+    if (hasDatabaseUrl()) {
+      try {
+        const item = await prisma.notification.create({
+          data: {
+            userId: data.userId,
+            type: data.type,
+            title: data.title,
+            message: data.message,
+            metadata: data.metadata || {},
+          },
+        });
+        return mapPrismaNotificationToNotification(item);
+      } catch (e) {
+        console.warn('[DB] Prisma createNotification failed, falling back to memory store:', e);
+      }
+    }
+
+    const id = `notif_${Date.now()}`;
+    const newNotif: NotificationItem = {
+      id,
+      userId: data.userId,
+      type: data.type,
+      title: data.title,
+      message: data.message,
+      description: data.message,
+      isRead: false,
+      read: false,
+      time: 'Just now',
+      createdAt: new Date().toISOString(),
+      metadata: data.metadata || {},
+    };
+    inMemoryStore.notifications.set(id, newNotif);
+    return { ...newNotif };
   }
 
   async markNotificationAsRead(id: string, userId: string): Promise<boolean> {
-    await prisma.notification.updateMany({
-      where: { id, userId },
-      data: { isRead: true },
-    });
+    if (hasDatabaseUrl()) {
+      try {
+        await prisma.notification.updateMany({
+          where: { id, userId },
+          data: { isRead: true },
+        });
+        return true;
+      } catch (e) {
+        console.warn('[DB] Prisma markNotificationAsRead failed, falling back to memory store:', e);
+      }
+    }
+    const notif = inMemoryStore.notifications.get(id);
+    if (notif && notif.userId === userId) {
+      notif.isRead = true;
+      notif.read = true;
+      inMemoryStore.notifications.set(id, notif);
+    }
     return true;
   }
 
@@ -1247,10 +1482,23 @@ export class Database {
   }
 
   async markAllNotificationsAsRead(userId: string): Promise<boolean> {
-    await prisma.notification.updateMany({
-      where: { userId, isRead: false },
-      data: { isRead: true },
-    });
+    if (hasDatabaseUrl()) {
+      try {
+        await prisma.notification.updateMany({
+          where: { userId, isRead: false },
+          data: { isRead: true },
+        });
+        return true;
+      } catch (e) {
+        console.warn('[DB] Prisma markAllNotificationsAsRead failed, falling back to memory store:', e);
+      }
+    }
+    for (const notif of inMemoryStore.notifications.values()) {
+      if (notif.userId === userId) {
+        notif.isRead = true;
+        notif.read = true;
+      }
+    }
     return true;
   }
 
@@ -1259,14 +1507,23 @@ export class Database {
   }
 
   // =========================================================================
-  // CANDIDATE RESUME METHODS (Builder & Generator)
+  // CANDIDATE RESUME METHODS
   // =========================================================================
   async getCandidateResumes(candidateId: string): Promise<CandidateResumeData[]> {
-    const list = await prisma.candidateResume.findMany({
-      where: { candidateId },
-      orderBy: { updatedAt: 'desc' },
-    });
-    return list.map(mapPrismaResumeToCandidateResume);
+    if (hasDatabaseUrl()) {
+      try {
+        const list = await prisma.candidateResume.findMany({
+          where: { candidateId },
+          orderBy: { updatedAt: 'desc' },
+        });
+        return list.map(mapPrismaResumeToCandidateResume);
+      } catch (e) {
+        console.warn('[DB] Prisma getCandidateResumes failed, falling back to memory store:', e);
+      }
+    }
+    return Array.from(inMemoryStore.resumes.values())
+      .filter((r) => r.candidateId === candidateId)
+      .sort((a, b) => new Date(b.updatedAt || '').getTime() - new Date(a.updatedAt || '').getTime());
   }
 
   async listResumesByCandidateId(candidateId: string): Promise<CandidateResumeData[]> {
@@ -1274,10 +1531,20 @@ export class Database {
   }
 
   async getCandidateResumeById(id: string, candidateId?: string): Promise<CandidateResumeData | null> {
-    const where: any = { id };
-    if (candidateId) where.candidateId = candidateId;
-    const r = await prisma.candidateResume.findFirst({ where });
-    return r ? mapPrismaResumeToCandidateResume(r) : null;
+    if (hasDatabaseUrl()) {
+      try {
+        const where: any = { id };
+        if (candidateId) where.candidateId = candidateId;
+        const r = await prisma.candidateResume.findFirst({ where });
+        if (r) return mapPrismaResumeToCandidateResume(r);
+      } catch (e) {
+        console.warn('[DB] Prisma getCandidateResumeById failed, falling back to memory store:', e);
+      }
+    }
+    const resume = inMemoryStore.resumes.get(id);
+    if (!resume) return null;
+    if (candidateId && resume.candidateId !== candidateId) return null;
+    return { ...resume };
   }
 
   async getResumeById(id: string, candidateId?: string): Promise<CandidateResumeData | null> {
@@ -1290,32 +1557,62 @@ export class Database {
     return null;
   }
 
-  async createCandidateResume(
-    candidateId: string,
-    data: Partial<CandidateResumeData>
-  ): Promise<CandidateResumeData> {
-    const r = await prisma.candidateResume.create({
-      data: {
-        candidateId,
-        title: data.title?.trim() || 'My Resume',
-        selectedTemplate: data.selectedTemplate || 'google',
-        personalData: (data.personalData || {}) as any,
-        summary: data.summary || '',
-        education: (data.education || []) as any,
-        experience: (data.experience || []) as any,
-        projects: (data.projects || []) as any,
-        skills: (data.skills || { languages: [], frameworks: [], databases: [], tools: [], aiMl: [], other: [] }) as any,
-        certifications: (data.certifications || []) as any,
-        achievements: (data.achievements || []) as any,
+  async createCandidateResume(candidateId: string, data: Partial<CandidateResumeData>): Promise<CandidateResumeData> {
+    if (hasDatabaseUrl()) {
+      try {
+        const r = await prisma.candidateResume.create({
+          data: {
+            candidateId,
+            title: data.title?.trim() || 'My Resume',
+            selectedTemplate: data.selectedTemplate || 'google',
+            personalData: (data.personalData || {}) as any,
+            summary: data.summary || '',
+            education: (data.education || []) as any,
+            experience: (data.experience || []) as any,
+            projects: (data.projects || []) as any,
+            skills: (data.skills || { languages: [], frameworks: [], databases: [], tools: [], aiMl: [], other: [] }) as any,
+            certifications: (data.certifications || []) as any,
+            achievements: (data.achievements || []) as any,
+          },
+        });
+        return mapPrismaResumeToCandidateResume(r);
+      } catch (e) {
+        console.warn('[DB] Prisma createCandidateResume failed, falling back to memory store:', e);
+      }
+    }
+
+    const id = `res_${Date.now()}`;
+    const newResume: CandidateResumeData = {
+      id,
+      candidateId,
+      title: data.title?.trim() || 'My Resume',
+      selectedTemplate: data.selectedTemplate || 'google',
+      personalData: data.personalData || {
+        fullName: '',
+        professionalTitle: '',
+        email: '',
+        phone: '',
+        location: '',
+        linkedin: '',
+        github: '',
+        portfolio: '',
       },
-    });
-    return mapPrismaResumeToCandidateResume(r);
+      summary: data.summary || '',
+      education: data.education || [],
+      experience: data.experience || [],
+      projects: data.projects || [],
+      skills: data.skills || { languages: [], frameworks: [], databases: [], tools: [], aiMl: [], other: [] },
+      certifications: data.certifications || [],
+      achievements: data.achievements || [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    inMemoryStore.resumes.set(id, newResume);
+    return { ...newResume };
   }
 
-  async saveCandidateResume(
-    candidateId: string,
-    data: Partial<CandidateResumeData>
-  ): Promise<CandidateResumeData> {
+  async saveCandidateResume(candidateId: string, data: Partial<CandidateResumeData>): Promise<CandidateResumeData> {
     if (data.id) {
       const updated = await this.updateCandidateResume(data.id, candidateId, data);
       if (updated) return updated;
@@ -1328,29 +1625,57 @@ export class Database {
     candidateId: string,
     updates: Partial<CandidateResumeData>
   ): Promise<CandidateResumeData | null> {
-    const data: any = {};
-    if (updates.title !== undefined) data.title = updates.title;
-    if (updates.selectedTemplate !== undefined) data.selectedTemplate = updates.selectedTemplate;
-    if (updates.personalData !== undefined) data.personalData = updates.personalData as any;
-    if (updates.summary !== undefined) data.summary = updates.summary;
-    if (updates.education !== undefined) data.education = updates.education as any;
-    if (updates.experience !== undefined) data.experience = updates.experience as any;
-    if (updates.projects !== undefined) data.projects = updates.projects as any;
-    if (updates.skills !== undefined) data.skills = updates.skills as any;
-    if (updates.certifications !== undefined) data.certifications = updates.certifications as any;
-    if (updates.achievements !== undefined) data.achievements = updates.achievements as any;
+    if (hasDatabaseUrl()) {
+      try {
+        const r = await prisma.candidateResume.update({
+          where: { id },
+          data: {
+            title: updates.title,
+            selectedTemplate: updates.selectedTemplate,
+            personalData: updates.personalData as any,
+            summary: updates.summary,
+            education: updates.education as any,
+            experience: updates.experience as any,
+            projects: updates.projects as any,
+            skills: updates.skills as any,
+            certifications: updates.certifications as any,
+            achievements: updates.achievements as any,
+          },
+        });
+        return mapPrismaResumeToCandidateResume(r);
+      } catch (e) {
+        console.warn('[DB] Prisma updateCandidateResume failed, falling back to memory store:', e);
+      }
+    }
 
-    const r = await prisma.candidateResume.update({
-      where: { id },
-      data,
-    });
-    return r ? mapPrismaResumeToCandidateResume(r) : null;
+    const existing = inMemoryStore.resumes.get(id);
+    if (!existing) return null;
+    if (existing.candidateId !== candidateId) return null;
+
+    const merged: CandidateResumeData = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    inMemoryStore.resumes.set(id, merged);
+    return { ...merged };
   }
 
   async deleteCandidateResume(id: string, candidateId?: string): Promise<boolean> {
-    const where: any = { id };
-    if (candidateId) where.candidateId = candidateId;
-    await prisma.candidateResume.deleteMany({ where });
+    if (hasDatabaseUrl()) {
+      try {
+        const where: any = { id };
+        if (candidateId) where.candidateId = candidateId;
+        await prisma.candidateResume.deleteMany({ where });
+        return true;
+      } catch (e) {
+        console.warn('[DB] Prisma deleteCandidateResume failed, falling back to memory store:', e);
+      }
+    }
+    const existing = inMemoryStore.resumes.get(id);
+    if (existing && (!candidateId || existing.candidateId === candidateId)) {
+      inMemoryStore.resumes.delete(id);
+    }
     return true;
   }
 
@@ -1358,11 +1683,20 @@ export class Database {
   // RESUME ATS ANALYSIS METHODS
   // =========================================================================
   async getResumeAnalyses(candidateId: string): Promise<ATSAnalysisResult[]> {
-    const list = await prisma.resumeAnalysis.findMany({
-      where: { candidateId },
-      orderBy: { createdAt: 'desc' },
-    });
-    return list.map(mapPrismaAnalysisToATSResult);
+    if (hasDatabaseUrl()) {
+      try {
+        const list = await prisma.resumeAnalysis.findMany({
+          where: { candidateId },
+          orderBy: { createdAt: 'desc' },
+        });
+        return list.map(mapPrismaAnalysisToATSResult);
+      } catch (e) {
+        console.warn('[DB] Prisma getResumeAnalyses failed, falling back to memory store:', e);
+      }
+    }
+    return Array.from(inMemoryStore.analyses.values())
+      .filter((a) => a.candidateId === candidateId)
+      .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
   }
 
   async getResumeAnalysesByCandidateId(candidateId: string): Promise<ATSAnalysisResult[]> {
@@ -1370,57 +1704,130 @@ export class Database {
   }
 
   async getResumeAnalysisById(id: string, candidateId?: string): Promise<ATSAnalysisResult | null> {
-    const where: any = { id };
-    if (candidateId) where.candidateId = candidateId;
-    const item = await prisma.resumeAnalysis.findFirst({ where });
-    return item ? mapPrismaAnalysisToATSResult(item) : null;
+    if (hasDatabaseUrl()) {
+      try {
+        const where: any = { id };
+        if (candidateId) where.candidateId = candidateId;
+        const item = await prisma.resumeAnalysis.findFirst({ where });
+        if (item) return mapPrismaAnalysisToATSResult(item);
+      } catch (e) {
+        console.warn('[DB] Prisma getResumeAnalysisById failed, falling back to memory store:', e);
+      }
+    }
+    const item = inMemoryStore.analyses.get(id);
+    if (!item) return null;
+    if (candidateId && item.candidateId !== candidateId) return null;
+    return { ...item };
   }
 
-  async saveResumeAnalysis(
-    candidateId: string,
-    analysisData: Partial<ATSAnalysisResult>
-  ): Promise<ATSAnalysisResult> {
-    const created = await prisma.resumeAnalysis.create({
-      data: {
-        candidateId,
-        resumeId: analysisData.resumeId,
-        jobId: analysisData.jobId,
-        jobTitle: analysisData.jobTitle || 'Target Role',
-        companyName: analysisData.companyName,
-        resumeSource: analysisData.resumeSource || 'saved',
-        jobSource: analysisData.jobSource || 'job',
-        resumeName: analysisData.resumeName || 'Resume Analysis',
-        overallScore: analysisData.overallScore || 0,
-        categoryScores: (analysisData.categoryScores || {}) as any,
-        matchedSkills: (analysisData.matchedSkills || []) as any,
-        missingSkills: (analysisData.missingSkills || []) as any,
-        weakSkills: (analysisData.weakSkills || []) as any,
-        experienceGaps: (analysisData.experienceGaps || []) as any,
-        projectRelevance: (analysisData.projectRelevance || []) as any,
-        formattingChecks: (analysisData.formattingChecks || []) as any,
-        completenessCheck: (analysisData.completenessCheck || {}) as any,
-        bulletReviews: (analysisData.bulletReviews || []) as any,
-        recommendations: (analysisData.recommendations || []) as any,
-        aiSummary: analysisData.aiSummary || '',
-        parsedResumeData: (analysisData.parsedResumeData || {}) as any,
-        rawResumeText: analysisData.rawResumeText,
-        rawJobDescription: analysisData.rawJobDescription,
+  async saveResumeAnalysis(candidateId: string, analysisData: Partial<ATSAnalysisResult>): Promise<ATSAnalysisResult> {
+    if (hasDatabaseUrl()) {
+      try {
+        const created = await prisma.resumeAnalysis.create({
+          data: {
+            candidateId,
+            resumeId: analysisData.resumeId,
+            jobId: analysisData.jobId,
+            jobTitle: analysisData.jobTitle || 'Target Role',
+            companyName: analysisData.companyName,
+            resumeSource: analysisData.resumeSource || 'saved',
+            jobSource: analysisData.jobSource || 'job',
+            resumeName: analysisData.resumeName || 'Resume Analysis',
+            overallScore: analysisData.overallScore || 0,
+            categoryScores: (analysisData.categoryScores || {}) as any,
+            matchedSkills: (analysisData.matchedSkills || []) as any,
+            missingSkills: (analysisData.missingSkills || []) as any,
+            weakSkills: (analysisData.weakSkills || []) as any,
+            experienceGaps: (analysisData.experienceGaps || []) as any,
+            projectRelevance: (analysisData.projectRelevance || []) as any,
+            formattingChecks: (analysisData.formattingChecks || []) as any,
+            completenessCheck: (analysisData.completenessCheck || {}) as any,
+            bulletReviews: (analysisData.bulletReviews || []) as any,
+            recommendations: (analysisData.recommendations || []) as any,
+            aiSummary: analysisData.aiSummary || '',
+            parsedResumeData: (analysisData.parsedResumeData || {}) as any,
+            rawResumeText: analysisData.rawResumeText,
+            rawJobDescription: analysisData.rawJobDescription,
+          },
+        });
+        return mapPrismaAnalysisToATSResult(created);
+      } catch (e) {
+        console.warn('[DB] Prisma saveResumeAnalysis failed, falling back to memory store:', e);
+      }
+    }
+
+    const id = `ana_${Date.now()}`;
+    const score = analysisData.overallScore || 0;
+    const newAnalysis: ATSAnalysisResult = {
+      id,
+      candidateId,
+      resumeId: analysisData.resumeId,
+      jobId: analysisData.jobId,
+      jobTitle: analysisData.jobTitle || 'Target Role',
+      companyName: analysisData.companyName,
+      resumeSource: analysisData.resumeSource || 'saved',
+      jobSource: analysisData.jobSource || 'job',
+      resumeName: analysisData.resumeName || 'Resume Analysis',
+      overallScore: score,
+      verdict: analysisData.verdict || (score >= 85 ? 'EXCELLENT_MATCH' : score >= 70 ? 'STRONG_FIT' : score >= 55 ? 'COMPETITIVE_FIT' : 'NEEDS_OPTIMIZATION'),
+      categoryScores: analysisData.categoryScores || {
+        skills: 0,
+        experience: 0,
+        keywords: 0,
+        impact: 0,
+        formatting: 0,
+        projects: 0,
+        education: 0,
       },
-    });
-    return mapPrismaAnalysisToATSResult(created);
+      matchedSkills: analysisData.matchedSkills || [],
+      missingSkills: analysisData.missingSkills || [],
+      weakSkills: analysisData.weakSkills || [],
+      experienceGaps: analysisData.experienceGaps || [],
+      projectRelevance: analysisData.projectRelevance || [],
+      formattingChecks: analysisData.formattingChecks || [],
+      completenessCheck: analysisData.completenessCheck || {
+        contactInfo: true,
+        summary: true,
+        experience: true,
+        education: true,
+        skills: true,
+        projects: true,
+        wordCount: 450,
+        estimatedPages: 1,
+        readingTimeMinutes: 2,
+      },
+      bulletReviews: analysisData.bulletReviews || [],
+      recommendations: analysisData.recommendations || [],
+      aiSummary: analysisData.aiSummary || '',
+      parsedResumeData: analysisData.parsedResumeData || {},
+      rawResumeText: analysisData.rawResumeText,
+      rawJobDescription: analysisData.rawJobDescription,
+      createdAt: new Date().toISOString(),
+    };
+
+    inMemoryStore.analyses.set(id, newAnalysis);
+    return { ...newAnalysis };
   }
 
-  async createResumeAnalysis(
-    candidateId: string,
-    analysisData: Partial<ATSAnalysisResult>
-  ): Promise<ATSAnalysisResult> {
+  async createResumeAnalysis(candidateId: string, analysisData: Partial<ATSAnalysisResult>): Promise<ATSAnalysisResult> {
     return this.saveResumeAnalysis(candidateId, analysisData);
   }
 
   async deleteResumeAnalysis(id: string, candidateId?: string): Promise<boolean> {
-    const where: any = { id };
-    if (candidateId) where.candidateId = candidateId;
-    await prisma.resumeAnalysis.deleteMany({ where });
+    if (hasDatabaseUrl()) {
+      try {
+        const where: any = { id };
+        if (candidateId) where.candidateId = candidateId;
+        await prisma.resumeAnalysis.deleteMany({ where });
+        return true;
+      } catch (e) {
+        console.warn('[DB] Prisma deleteResumeAnalysis failed, falling back to memory store:', e);
+      }
+    }
+    const item = inMemoryStore.analyses.get(id);
+    if (item && (!candidateId || item.candidateId === candidateId)) {
+      inMemoryStore.analyses.delete(id);
+    }
     return true;
   }
 }
